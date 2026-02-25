@@ -87,7 +87,21 @@ async function boot(u) {
   await load();
   renderDashboardMindMaps();
   claimPendingRequests();
-  initCollab();
+  await initCollab(); // Make sure profiles finish loading
+
+  // Check if user needs to pick an avatar
+  if (!globalProfiles[user.id] || !globalProfiles[user.id].avatar_url) {
+    const modal = document.getElementById('avatar-modal');
+    const content = document.getElementById('avatar-modal-content');
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      setTimeout(() => {
+        content?.classList.remove('translate-y-8', 'opacity-0');
+        content?.classList.add('translate-y-0', 'opacity-100');
+      }, 50);
+    }
+  }
 }
 
 function switchView(view) {
@@ -172,6 +186,10 @@ function renderGallery() {
            <span class="material-icons-outlined text-sm font-bold">${type === 'link' ? 'link' : (type === 'code' ? 'code' : 'description')}</span>
            <span class="font-bold text-[10px] uppercase">${type}</span>
         </div>
+        <button onclick="event.stopPropagation(); openShareItemModal('${i.id}', '${esc(i.title || 'UNTITLED').replace(/'/g, "\\'")}', '${(i.shared_with || []).join(',')}')" class="w-6 h-6 flex items-center justify-center bg-white border-2 border-black rounded-full shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all ml-auto relative group z-10">
+          <span class="material-icons-outlined text-[14px] text-black">share</span>
+          <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max px-2 py-1 bg-black text-white text-[9px] font-bold rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none after:content-[''] after:absolute after:-bottom-1 after:left-1/2 after:-translate-x-1/2 after:border-2 after:border-t-black after:border-r-transparent after:border-b-transparent after:border-l-transparent">Share Item</div>
+        </button>
       </div>
       <div class="p-4">
         <h3 class="text-lg font-bold leading-tight text-black">${esc(i.title || 'UNTITLED')}</h3>
@@ -1099,6 +1117,38 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ─── AVATAR SELECTION ─────────────────────────────
+async function selectAvatar(filename) {
+  const { error } = await sb.from('profiles').update({ avatar_url: filename }).eq('id', user.id);
+  if (error) {
+    showToast('Could not save avatar: ' + error.message, 'error');
+    return;
+  }
+
+  const modal = document.getElementById('avatar-modal');
+  const content = document.getElementById('avatar-modal-content');
+  if (content) {
+    content.classList.remove('translate-y-0', 'opacity-100');
+    content.classList.add('translate-y-8', 'opacity-0');
+  }
+  setTimeout(() => {
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+  }, 300);
+
+  showToast('Avatar updated! Looking good.', 'success');
+
+  await refreshProfiles();
+
+  // Re-render views if they are open
+  renderCollabUsers();
+  renderFriendsList();
+  renderIncomingRequests();
+  renderApprovedPeeks();
+}
+
 // ─── COLLAB REALTIME ───────────────────────────
 let collabChannel = null;
 let activeUsers = {};
@@ -1107,10 +1157,35 @@ let incomingRequests = [];  // collab_requests where target_id = me, status = pe
 let outgoingRequests = {};  // map: target_id -> status ('pending'|'accepted'|'denied')
 let approvedPeeks = [];     // collab_requests where requester_id = me, status = accepted
 
+let globalProfiles = {};
+async function refreshProfiles() {
+  const { data } = await sb.from('profiles').select('id, email, avatar_url, display_name');
+  if (data) {
+    data.forEach(p => {
+      globalProfiles[p.id] = p;
+      globalProfiles[p.email] = p;
+    });
+  }
+}
+
+function getAvatarHtml(key, sizeClass = 'w-10 h-10', textClass = 'text-lg') {
+  const p = globalProfiles[key];
+  if (p && p.avatar_url) {
+    return `<img src="./assets/avatars/${p.avatar_url}" class="${sizeClass} rounded-full border-3 border-black object-cover flex-shrink-0 bg-white">`;
+  }
+  const name = p?.display_name || (typeof key === 'string' && key.includes('@') ? key.split('@')[0] : 'U');
+  const colors = ['bg-neo-yellow', 'bg-neo-pink', 'bg-neo-blue', 'bg-neo-green', 'bg-neo-purple'];
+  const color = colors[name.charCodeAt(0) % colors.length];
+  return `<div class="${sizeClass} flex-shrink-0 rounded-full border-3 border-black ${color} flex items-center justify-center font-bold ${textClass} select-none text-black">
+    ${name.charAt(0).toUpperCase()}
+  </div>`;
+}
+
 async function initCollab() {
   if (!user || collabChannel) return;
 
-  // Load existing collab request state
+  // Load existing collab request state and profiles
+  await refreshProfiles();
   await refreshCollabRequests();
 
   collabChannel = sb.channel('vault-collab', {
@@ -1128,6 +1203,7 @@ async function initCollab() {
 
   // Listen for collab_requests changes in realtime
   collabChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'collab_requests' }, async () => {
+    await refreshProfiles();
     await refreshCollabRequests();
     renderIncomingRequests();
     renderApprovedPeeks();
@@ -1263,9 +1339,7 @@ function renderCollabUsers() {
 
     return `
       <div class="flex items-center gap-3 p-3 border-3 border-black rounded-xl bg-white shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all">
-        <div class="w-10 h-10 rounded-full border-3 border-black bg-neo-yellow flex items-center justify-center font-bold text-lg select-none flex-shrink-0">
-          ${name.charAt(0).toUpperCase()}
-        </div>
+        ${getAvatarHtml(u.email || targetId, 'w-10 h-10', 'text-lg')}
         <div class="flex-1 min-w-0">
           <div class="font-bold text-black truncate flex items-center gap-2 text-sm">
             ${name}
@@ -1320,9 +1394,7 @@ function renderApprovedPeeks() {
     const name = r.target_email || r.target_id.slice(0, 8);
     return `
       <div class="p-3 border-3 border-black rounded-xl bg-neo-green shadow-neo-sm flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full border-2 border-black bg-white flex items-center justify-center font-bold text-sm">
-          ${name.charAt(0).toUpperCase()}
-        </div>
+        ${getAvatarHtml(r.target_id || r.target_email, 'w-8 h-8', 'text-sm')}
         <div class="flex-1 min-w-0">
           <div class="font-bold text-black text-xs truncate">${name}</div>
           <div class="text-[9px] font-mono text-black/50">Access granted</div>
@@ -1435,13 +1507,9 @@ async function renderFriendsList() {
 
   container.innerHTML = friends.map(f => {
     const name = f.email.split('@')[0];
-    const colors = ['bg-neo-yellow', 'bg-neo-pink', 'bg-neo-blue', 'bg-neo-green', 'bg-neo-purple'];
-    const color = colors[name.charCodeAt(0) % colors.length];
     return `
       <div class="p-3 border-3 border-black rounded-xl bg-white shadow-neo-sm flex items-center gap-3">
-        <div class="w-10 h-10 flex-shrink-0 rounded-full border-3 border-black ${color} flex items-center justify-center font-bold text-lg">
-          ${name.charAt(0).toUpperCase()}
-        </div>
+        ${getAvatarHtml(f.id || f.email, 'w-10 h-10', 'text-lg')}
         <div class="flex-1 min-w-0">
           <div class="font-bold text-black text-sm truncate">${name}</div>
           <div class="text-[10px] font-mono text-gray-400 truncate">${f.email}</div>
@@ -1489,14 +1557,10 @@ async function searchUsers() {
 
     results.innerHTML = users.map(p => {
       const name = p.display_name || p.email.split('@')[0];
-      const colors = ['bg-neo-yellow', 'bg-neo-pink', 'bg-neo-blue', 'bg-neo-green', 'bg-neo-purple'];
-      const color = colors[name.charCodeAt(0) % colors.length];
       const alreadySent = outgoingRequests[p.email] || outgoingRequests[p.id];
       return `
         <div class="flex items-center gap-3 p-2 border-2 border-black rounded-xl bg-white hover:bg-gray-50 transition-colors">
-          <div class="w-9 h-9 flex-shrink-0 rounded-full border-2 border-black ${color} flex items-center justify-center font-bold text-sm">
-            ${name.charAt(0).toUpperCase()}
-          </div>
+          ${getAvatarHtml(p.id || p.email, 'w-9 h-9', 'text-sm')}
           <div class="flex-1 min-w-0">
             <div class="font-bold text-black text-sm truncate">${esc(name)}</div>
             <div class="text-[10px] font-mono text-gray-400 truncate">${esc(p.email)}</div>
@@ -1677,6 +1741,94 @@ function closeShareMapModal() {
   const modal = document.getElementById('modal-share-map');
   if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
   shareMapName = null;
+}
+
+// ─── ITEM SHARING (GRANULAR PERMISSIONS) ─────────────────
+let shareItemId = null;
+let currentItemSharedWith = [];
+
+async function openShareItemModal(itemId, itemTitle, sharedWithCsv) {
+  shareItemId = itemId;
+  currentItemSharedWith = sharedWithCsv ? sharedWithCsv.split(',') : [];
+
+  const modal = document.getElementById('modal-share-item');
+  const title = document.getElementById('share-item-name-display');
+  const list = document.getElementById('share-item-friends-list');
+  if (!modal) return;
+  if (title) title.textContent = `"${itemTitle}"`;
+  if (list) list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center py-4">Loading friends...</div>';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+
+  friends = await getFriends();
+  if (!list) return;
+  if (friends.length === 0) {
+    list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center py-4">No friends yet to share with.</div>';
+    return;
+  }
+
+  // Render friends with a toggle indicating if they currently have access
+  list.innerHTML = friends.map(f => {
+    const name = f.email.split('@')[0];
+    const hasAccess = currentItemSharedWith.includes(f.id);
+    const btnClass = hasAccess
+      ? "bg-success hover:bg-red-400"
+      : "bg-white hover:bg-neo-green";
+
+    return `
+      <div class="flex items-center gap-3 p-3 border-2 border-black rounded-xl ${btnClass} shadow-neo-sm transition-all">
+        ${getAvatarHtml(f.id || f.email, 'w-8 h-8', 'text-sm')}
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-sm text-black">${name}</div>
+          <div class="text-[10px] font-mono text-gray-800">${f.email}</div>
+        </div>
+        <button onclick="toggleItemShare('${f.id}', '${f.email}')" class="bg-black text-white px-3 py-1 text-xs font-bold uppercase rounded border-2 border-transparent hover:border-white shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-neo-pink">
+          ${hasAccess ? 'Revoke' : 'Grant'}
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+function closeShareItemModal() {
+  const modal = document.getElementById('modal-share-item');
+  if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+  shareItemId = null;
+}
+
+async function toggleItemShare(friendId, friendEmail) {
+  if (!shareItemId) return;
+
+  const hasAccess = currentItemSharedWith.includes(friendId);
+  const newSharedWith = hasAccess
+    ? currentItemSharedWith.filter(id => id !== friendId)
+    : [...currentItemSharedWith, friendId];
+
+  const { error } = await sb.from('items')
+    .update({ shared_with: newSharedWith })
+    .eq('id', shareItemId);
+
+  if (error) {
+    showToast('Could not update sharing: ' + error.message, 'error');
+    return;
+  }
+
+  // Update local state and UI
+  currentItemSharedWith = newSharedWith;
+
+  // Update the local items cache so the gallery UI uses the latest array
+  const cachedItem = items.find(i => i.id === shareItemId);
+  if (cachedItem) cachedItem.shared_with = currentItemSharedWith;
+
+  showToast(`${hasAccess ? 'Revoked' : 'Granted'} access for ${friendEmail.split('@')[0]}! ✓`);
+
+  // Re-render the gallery to update the "Share" button's CSV string, and refresh modal
+  if (!document.getElementById('gallery').classList.contains('hidden')) {
+    renderGallery();
+  }
+
+  // Re-open/refresh modal to show updated toggle states
+  const title = document.getElementById('share-item-name-display')?.textContent || 'Item';
+  openShareItemModal(shareItemId, title.replace(/"/g, ''), currentItemSharedWith.join(','));
 }
 
 async function shareMindMap(mapName, friendId, friendEmail) {

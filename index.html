@@ -910,6 +910,30 @@
     </div>
   </div>
 
+  <!-- SHARE ITEM MODAL -->
+  <div id="modal-share-item"
+    class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[125] flex items-center justify-center p-4">
+    <div
+      class="bg-white dark:bg-gray-800 border-4 border-black dark:border-white rounded-2xl p-6 shadow-neo-lg w-full max-w-sm">
+      <div class="flex items-center gap-3 mb-5">
+        <div
+          class="w-10 h-10 bg-neo-yellow border-3 border-black rounded-xl flex items-center justify-center shadow-neo-sm">
+          <span class="material-icons-outlined text-black">share</span>
+        </div>
+        <div>
+          <h3 class="text-lg font-black text-black dark:text-white uppercase">Share Item</h3>
+          <div id="share-item-name-display" class="text-xs font-mono text-gray-400 truncate w-48"></div>
+        </div>
+        <button onclick="closeShareItemModal()"
+          class="ml-auto w-8 h-8 bg-neo-pink border-2 border-black rounded-full flex items-center justify-center font-bold text-black">×</button>
+      </div>
+      <div class="font-mono text-[10px] font-bold text-gray-400 uppercase mb-3">Toggle access for friends:</div>
+      <div id="share-item-friends-list" class="flex flex-col gap-2 max-h-60 overflow-y-auto">
+        <div class="font-mono text-xs text-gray-400 text-center py-4">Loading...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- SHARE MIND MAP MODAL -->
   <div id="modal-share-map"
     class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[125] flex items-center justify-center p-4">
@@ -930,6 +954,40 @@
       <div class="font-mono text-[10px] font-bold text-gray-400 uppercase mb-3">Choose a friend to share with:</div>
       <div id="share-friends-list" class="flex flex-col gap-2 max-h-60 overflow-y-auto">
         <div class="font-mono text-xs text-gray-400 text-center py-4">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Avatar Selection Modal -->
+  <div id="avatar-modal"
+    class="hidden fixed inset-0 bg-black/80 z-[100] items-center justify-center p-4 backdrop-blur-sm">
+    <div
+      class="bg-white border-4 border-black rounded-3xl p-6 w-full max-w-md shadow-[8px_8px_0_0_#000] transform transition-all translate-y-8 opacity-0"
+      id="avatar-modal-content">
+      <h2 class="text-2xl font-black text-black uppercase mb-2">Choose Your Avatar</h2>
+      <p class="text-gray-600 font-mono text-xs mb-6 font-bold">Pick your identity for The Goted universe.</p>
+
+      <div class="grid grid-cols-2 gap-4 auto-rows-fr">
+        <button onclick="selectAvatar('artist.png')"
+          class="border-4 border-black rounded-2xl overflow-hidden hover:shadow-neo hover:-translate-y-1 transition-all group relative bg-neo-pink">
+          <img src="./assets/avatars/artist.png" class="w-full h-full object-cover">
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+        </button>
+        <button onclick="selectAvatar('hacker.png')"
+          class="border-4 border-black rounded-2xl overflow-hidden hover:shadow-neo hover:-translate-y-1 transition-all group relative bg-neo-yellow">
+          <img src="./assets/avatars/hacker.png" class="w-full h-full object-cover">
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+        </button>
+        <button onclick="selectAvatar('ninja.png')"
+          class="border-4 border-black rounded-2xl overflow-hidden hover:shadow-neo hover:-translate-y-1 transition-all group relative bg-neo-green">
+          <img src="./assets/avatars/ninja.png" class="w-full h-full object-cover">
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+        </button>
+        <button onclick="selectAvatar('robot.png')"
+          class="border-4 border-black rounded-2xl overflow-hidden hover:shadow-neo hover:-translate-y-1 transition-all group relative bg-neo-blue">
+          <img src="./assets/avatars/robot.png" class="w-full h-full object-cover">
+          <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+        </button>
       </div>
     </div>
   </div>
