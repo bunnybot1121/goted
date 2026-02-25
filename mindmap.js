@@ -35,6 +35,7 @@ const MM_LINE_TYPES = [
 ];
 
 let mmCurrentLineType = 'arrow';
+let currentMapName = null; // tracks most recently loaded/saved map name
 
 // ─── SHAPE MENU ───────────────────────────
 function toggleShapeMenu() {
@@ -125,6 +126,12 @@ function renderMindMapToolbar() {
     <button onclick="saveMindMap()" class="bg-success text-black border-3 border-black px-3 py-1.5 font-bold text-xs shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all rounded-lg flex items-center gap-1.5" title="Save Mind Map">
       <span class="material-icons-outlined text-sm">save</span>
       Save
+    </button>
+
+    <!-- Share -->
+    <button onclick="openShareMapModal(currentMapName || '')" class="bg-neo-blue text-black border-3 border-black px-3 py-1.5 font-bold text-xs shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all rounded-lg flex items-center gap-1.5" title="Share with a friend">
+      <span class="material-icons-outlined text-sm">share</span>
+      Share
     </button>
 
     <!-- Clear -->
@@ -474,51 +481,106 @@ function handleCanvasClick(e) {
 
 // ─── SAVE / LOAD ──────────────────────────
 function saveMindMap() {
-  const data = { nodes: mmNodes, connections: mmConnections, nodeId: mmNodeId };
-  const name = prompt('Mind Map name:', 'My Mind Map');
-  if (!name) return;
+  // Open the custom save modal instead of native prompt()
+  const modal = document.getElementById('modal-save-map');
+  const input = document.getElementById('save-map-name');
+  if (!modal || !input) return;
+  input.value = 'My Mind Map';
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  setTimeout(() => { input.select(); input.focus(); }, 50);
+}
 
-  const saves = JSON.parse(localStorage.getItem('goted_mindmaps') || '{}');
-  saves[name] = data;
-  localStorage.setItem('goted_mindmaps', JSON.stringify(saves));
+async function confirmSaveMap() {
+  if (!sb || !user) { showToast('Not logged in', 'error'); return; }
+  const input = document.getElementById('save-map-name');
+  const name = (input?.value || '').trim();
+  if (!name) { input?.focus(); return; }
+
+  const btn = document.getElementById('save-map-btn');
+  if (btn) { btn.textContent = 'SAVING...'; btn.disabled = true; }
+
+  const { error } = await sb.from('mindmaps').upsert({
+    user_id: user.id,
+    name: name,
+    nodes: mmNodes,
+    connections: mmConnections,
+    node_id_counter: mmNodeId,
+    updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id,name' });
+
+  if (btn) { btn.textContent = 'SAVE'; btn.disabled = false; }
+
+  if (error) { showToast('Save failed: ' + error.message, 'error'); return; }
+
+  currentMapName = name;
+  closeSaveMapModal();
 
   const statusEl = document.getElementById('mm-save-status');
   if (statusEl) {
     statusEl.textContent = `✓ Saved "${name}"`;
     statusEl.classList.remove('opacity-0');
-    setTimeout(() => statusEl.classList.add('opacity-0'), 2000);
+    setTimeout(() => statusEl.classList.add('opacity-0'), 2500);
   }
+  await renderSavedMaps();
 }
 
-function loadMindMap(name) {
-  const saves = JSON.parse(localStorage.getItem('goted_mindmaps') || '{}');
-  if (!saves[name]) return;
+function closeSaveMapModal() {
+  const modal = document.getElementById('modal-save-map');
+  if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+}
 
-  mmNodes = saves[name].nodes || [];
-  mmConnections = saves[name].connections || [];
-  mmNodeId = saves[name].nodeId || mmNodes.length;
+async function loadMindMap(name) {
+  if (!sb || !user) return;
+
+  const { data, error } = await sb.from('mindmaps')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('name', name)
+    .single();
+
+  if (error || !data) return;
+
+  mmNodes = data.nodes || [];
+  mmConnections = data.connections || [];
+  mmNodeId = data.node_id_counter || mmNodes.length;
+  currentMapName = name;
   mmSelected = null;
   mmMode = 'select';
   mmConnectFrom = null;
   renderMindMapCanvas();
   renderMindMapToolbar();
-  renderSavedMaps();
+  await renderSavedMaps();
 }
 
-function deleteSavedMap(name) {
+async function deleteSavedMap(name) {
   if (!confirm(`Delete "${name}"?`)) return;
-  const saves = JSON.parse(localStorage.getItem('goted_mindmaps') || '{}');
-  delete saves[name];
-  localStorage.setItem('goted_mindmaps', JSON.stringify(saves));
-  renderSavedMaps();
+  if (!sb || !user) return;
+
+  const { error } = await sb.from('mindmaps')
+    .delete()
+    .eq('user_id', user.id)
+    .eq('name', name);
+
+  if (error) { showToast('Delete failed: ' + error.message, 'error'); return; }
+  await renderSavedMaps();
 }
 
-function renderSavedMaps() {
+async function renderSavedMaps() {
   const list = document.getElementById('mm-saved-list');
   if (!list) return;
 
-  const saves = JSON.parse(localStorage.getItem('goted_mindmaps') || '{}');
-  const names = Object.keys(saves);
+  if (!sb || !user) {
+    list.innerHTML = '<span class="text-xs font-mono text-gray-400">No saved maps</span>';
+    return;
+  }
+
+  const { data } = await sb.from('mindmaps')
+    .select('name')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false });
+
+  const names = (data || []).map(r => r.name);
 
   if (names.length === 0) {
     list.innerHTML = '<span class="text-xs font-mono text-gray-400">No saved maps</span>';
@@ -526,8 +588,10 @@ function renderSavedMaps() {
   }
 
   list.innerHTML = names.map(n => `
-    <button onclick="loadMindMap('${n}')" class="bg-white border-2 border-black px-3 py-1 text-[10px] font-bold rounded-lg shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all flex items-center gap-1">${n}</button>
-    <button onclick="deleteSavedMap('${n}')" class="text-red-500 text-xs font-bold hover:text-red-700 transition-colors"><span class="material-icons-outlined text-sm">close</span></button>
+    <button onclick="loadMindMap('${n.replace(/'/g, "\\'")}')"
+            class="bg-white border-2 border-black px-3 py-1 text-[10px] font-bold rounded-lg shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all flex items-center gap-1">${n}</button>
+    <button onclick="deleteSavedMap('${n.replace(/'/g, "\\'")}')"
+            class="text-red-500 text-xs font-bold hover:text-red-700 transition-colors"><span class="material-icons-outlined text-sm">close</span></button>
   `).join('');
 }
 
@@ -545,8 +609,8 @@ function clearMindMap() {
 }
 
 // Override the old renderMindMap from app.js
-function renderMindMap() {
+async function renderMindMap() {
   renderMindMapToolbar();
   renderMindMapCanvas();
-  renderSavedMaps();
+  await renderSavedMaps();
 }

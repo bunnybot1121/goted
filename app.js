@@ -7,10 +7,35 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 // ══════════════════════════════════════════════
 
 let sb, items = [], user = null, current = null, filterCat = 'all', q = '', dirtyEntry = false;
+let collabGrantedUser = null; // user whose items we are currently peeking
 const STATUS = { ACTIVE: 'active', ARCHIVED: 'archived', DELETED: 'deleted' };
 let calYear = 2026, calMonth = 1; // 0-indexed: Jan=0, Feb=1
 
 // ─── INIT ─────────────────────────────────────
+
+// ─── TOAST NOTIFICATIONS ───────────────────────
+function showToast(message, type = 'info') {
+  const colors = {
+    info: 'bg-neo-blue',
+    success: 'bg-success',
+    error: 'bg-neo-pink',
+    warning: 'bg-neo-yellow',
+  };
+  const icons = { info: 'info', success: 'check_circle', error: 'error', warning: 'warning' };
+  const container = document.getElementById('toast-container');
+  if (!container) { console.warn(message); return; }
+
+  const el = document.createElement('div');
+  el.className = `${colors[type] || colors.info} border-3 border-black rounded-xl shadow-neo px-4 py-3 flex items-start gap-3 pointer-events-auto translate-x-0 transition-all duration-300`;
+  el.innerHTML = `
+    <span class="material-icons-outlined text-black text-base flex-shrink-0 mt-0.5">${icons[type]}</span>
+    <span class="font-bold text-black text-sm leading-snug flex-1">${message}</span>
+    <button onclick="this.parentElement.remove()" class="text-black/60 hover:text-black font-bold text-lg leading-none flex-shrink-0">×</button>
+  `;
+  container.appendChild(el);
+  // auto-remove after 4s
+  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(120%)'; setTimeout(() => el.remove(), 300); }, 4000);
+}
 window.onload = async () => {
   if (SUPABASE_URL.includes('YOUR_')) {
     const login = document.getElementById('login');
@@ -53,7 +78,15 @@ async function boot(u) {
   user = u;
   show('app');
   switchView('dashboard');
+  // Register/update this user's public profile (for search)
+  await sb.from('profiles').upsert({
+    id: user.id,
+    email: user.email,
+    display_name: user.email.split('@')[0]
+  }, { onConflict: 'id' });
   await load();
+  renderDashboardMindMaps();
+  claimPendingRequests();
   initCollab();
 }
 
@@ -87,7 +120,7 @@ function switchView(view) {
   }
 
   // Render content if needed
-  if (view === 'dashboard') render();
+  if (view === 'dashboard') { render(); renderDashboardMindMaps(); }
   if (view === 'gallery') renderGallery();
   if (view === 'flashcards') initFlashcards();
   if (view === 'braindump') {
@@ -96,6 +129,14 @@ function switchView(view) {
   }
   if (view === 'mindmap') renderMindMap();
   if (view === 'calendar') renderCalendar();
+  if (view === 'collab') {
+    // Always re-fetch fresh data from Supabase before rendering
+    refreshCollabRequests().then(() => {
+      renderIncomingRequests();
+      renderApprovedPeeks();
+      renderFriendsList();
+    });
+  }
   if (view === 'trash') {
     renderArchive();
     renderTrash();
@@ -657,10 +698,40 @@ async function doLogout() {
 
 // ─── DATA ─────────────────────────────────────
 async function load() {
-  const { data } = await sb.from('items').select('*').order('created_at', { ascending: false });
+  // Only fetch THIS user's items — per-user workspace isolation
+  const { data } = await sb.from('items')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
   items = data || [];
   render();
   renderCalendar();
+}
+
+async function renderDashboardMindMaps() {
+  const container = document.getElementById('dashboard-mindmaps');
+  if (!container || !sb || !user) return;
+
+  const { data } = await sb.from('mindmaps')
+    .select('name, updated_at')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false })
+    .limit(6);
+
+  const maps = data || [];
+
+  if (maps.length === 0) {
+    container.innerHTML = '<div class="text-[10px] font-mono text-gray-400 text-center py-3">No saved maps yet</div>';
+    return;
+  }
+
+  container.innerHTML = maps.map(m => `
+    <button onclick="switchView('mindmap'); setTimeout(() => loadMindMap('${m.name.replace(/'/g, "\\'")}'), 300)"
+      class="w-full text-left flex items-center gap-2 px-3 py-2 border-2 border-black dark:border-white rounded-lg bg-neo-yellow/40 hover:bg-primary hover:shadow-neo-sm font-bold text-[11px] text-black dark:text-black transition-all group">
+      <span class="material-icons-outlined text-sm flex-shrink-0">account_tree</span>
+      <span class="truncate">${esc(m.name)}</span>
+    </button>
+  `).join('');
 }
 
 function filtered() {
@@ -1008,6 +1079,8 @@ document.addEventListener('keydown', e => {
     closeDelete();
     closeSerendipity();
     closeClipper();
+    closeCollabPeek();
+    if (typeof closeSaveMapModal === 'function') closeSaveMapModal();
   }
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault();
@@ -1030,9 +1103,15 @@ document.addEventListener('keydown', e => {
 let collabChannel = null;
 let activeUsers = {};
 let liveFeed = [];
+let incomingRequests = [];  // collab_requests where target_id = me, status = pending
+let outgoingRequests = {};  // map: target_id -> status ('pending'|'accepted'|'denied')
+let approvedPeeks = [];     // collab_requests where requester_id = me, status = accepted
 
-function initCollab() {
+async function initCollab() {
   if (!user || collabChannel) return;
+
+  // Load existing collab request state
+  await refreshCollabRequests();
 
   collabChannel = sb.channel('vault-collab', {
     config: { presence: { key: user.id } }
@@ -1047,21 +1126,115 @@ function initCollab() {
     handleRealtimeEvent(payload);
   });
 
+  // Listen for collab_requests changes in realtime
+  collabChannel.on('postgres_changes', { event: '*', schema: 'public', table: 'collab_requests' }, async () => {
+    await refreshCollabRequests();
+    renderIncomingRequests();
+    renderApprovedPeeks();
+    renderCollabUsers();
+  });
+
   collabChannel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
       await collabChannel.track({
         email: user.email,
+        user_id: user.id,
         joined_at: new Date().toISOString()
       });
     }
   });
 }
 
+async function refreshCollabRequests() {
+  const { data } = await sb.from('collab_requests').select('*');
+  if (!data) return;
+
+  // Match incoming requests: target is me by ID, OR by email (for email-sent requests not yet claimed)
+  incomingRequests = data.filter(r =>
+    r.status === 'pending' &&
+    (r.target_id === user.id || (r.target_id === null && r.target_email === user.email))
+  );
+  approvedPeeks = data.filter(r => r.requester_id === user.id && r.status === 'accepted');
+
+  // Build outgoing map: target_email -> status (use email as key since target_id may be null)
+  outgoingRequests = {};
+  data.filter(r => r.requester_id === user.id).forEach(r => {
+    outgoingRequests[r.target_email || r.target_id] = r.status;
+  });
+}
+
+async function sendCollabRequest(targetId, targetEmail) {
+  if (outgoingRequests[targetId]) {
+    showToast(`Already ${outgoingRequests[targetId]} for ${targetEmail}`, 'warning');
+    return;
+  }
+  const { error } = await sb.from('collab_requests').insert({
+    requester_id: user.id,
+    requester_email: user.email,
+    target_id: targetId,
+    status: 'pending'
+  });
+  if (error) { showToast('Request failed: ' + error.message, 'error'); return; }
+  await refreshCollabRequests();
+  renderCollabUsers();
+  renderIncomingRequests();
+  renderApprovedPeeks();
+  // Notify success visually
+  const btn = document.querySelector(`[data-req-target="${targetId}"]`);
+  if (btn) { btn.textContent = 'PENDING...'; btn.disabled = true; }
+}
+
+async function respondToRequest(requestId, action) {
+  const { error } = await sb.from('collab_requests').update({ status: action }).eq('id', requestId);
+  if (error) { showToast('Failed: ' + error.message, 'error'); return; }
+  await refreshCollabRequests();
+  renderIncomingRequests();
+  renderApprovedPeeks();
+  renderCollabUsers();
+}
+
+async function openCollabPeek(targetUserId, targetEmail) {
+  collabGrantedUser = { id: targetUserId, email: targetEmail };
+  const overlay = document.getElementById('collab-peek-overlay');
+  document.getElementById('collab-peek-title').textContent = `${targetEmail.split('@')[0].toUpperCase()}'S VAULT`;
+  document.getElementById('collab-peek-list').innerHTML = '<div class="font-mono text-xs text-gray-400 text-center mt-10">Loading...</div>';
+  overlay.classList.remove('hidden');
+  overlay.classList.add('flex');
+
+  const { data, error } = await sb.from('items')
+    .select('*')
+    .eq('user_id', targetUserId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false });
+
+  const list = document.getElementById('collab-peek-list');
+  if (error || !data || data.length === 0) {
+    list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center mt-10">EMPTY VAULT</div>';
+    return;
+  }
+
+  const typeColors = { note: 'bg-neo-green', link: 'bg-neo-purple', code: 'bg-neo-blue', idea: 'bg-neo-yellow', file: 'bg-neo-pink' };
+  list.innerHTML = data.map(i => `
+    <div class="${typeColors[i.type] || 'bg-white'} rounded-xl border-3 border-black shadow-neo p-4">
+      <div class="font-bold text-sm text-black">${esc(i.title || 'UNTITLED')}</div>
+      <div class="text-xs font-mono text-black/60 mt-1 line-clamp-2">${esc((i.content || '').substring(0, 80))}</div>
+      <div class="mt-2 text-[10px] font-bold text-black/40 uppercase">${i.type} · ${i.category || 'no category'}</div>
+    </div>
+  `).join('');
+}
+
+function closeCollabPeek() {
+  collabGrantedUser = null;
+  const overlay = document.getElementById('collab-peek-overlay');
+  overlay.classList.add('hidden');
+  overlay.classList.remove('flex');
+}
+
 function renderCollabUsers() {
   const container = document.getElementById('collab-users-list');
   if (!container) return;
 
-  const users = Object.values(activeUsers).map(u => u[0]); // Get first presence per user
+  const users = Object.values(activeUsers).map(u => u[0]);
 
   if (users.length === 0) {
     container.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-10">No active hunters</div>';
@@ -1071,19 +1244,90 @@ function renderCollabUsers() {
   container.innerHTML = users.map(u => {
     const isMe = u.email === user?.email;
     const name = u.email ? u.email.split('@')[0] : 'Unknown';
+    const targetId = u.user_id;
+    const reqStatus = targetId ? outgoingRequests[targetId] : null;
+    const isAccepted = reqStatus === 'accepted';
+
+    let actionBtn = '';
+    if (!isMe && targetId) {
+      if (!reqStatus) {
+        actionBtn = `<button data-req-target="${targetId}" onclick="sendCollabRequest('${targetId}','${u.email || ''}')" class="text-[9px] font-black uppercase border-2 border-black bg-primary px-2 py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">Request</button>`;
+      } else if (reqStatus === 'pending') {
+        actionBtn = `<span class="text-[9px] font-black uppercase border-2 border-black bg-neo-yellow px-2 py-1 rounded">Pending</span>`;
+      } else if (reqStatus === 'accepted') {
+        actionBtn = `<button onclick="openCollabPeek('${targetId}','${u.email || ''}')" class="text-[9px] font-black uppercase border-2 border-black bg-success px-2 py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">👁 View</button>`;
+      } else if (reqStatus === 'denied') {
+        actionBtn = `<span class="text-[9px] font-black uppercase border-2 border-black bg-neo-pink px-2 py-1 rounded">Denied</span>`;
+      }
+    }
+
     return `
-      <div class="flex items-center gap-4 p-3 border-3 border-black rounded-xl bg-white shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all">
-        <div class="w-12 h-12 rounded-full border-3 border-black bg-neo-yellow flex items-center justify-center font-bold text-xl select-none">
+      <div class="flex items-center gap-3 p-3 border-3 border-black rounded-xl bg-white shadow-neo-sm hover:shadow-neo hover:-translate-y-0.5 transition-all">
+        <div class="w-10 h-10 rounded-full border-3 border-black bg-neo-yellow flex items-center justify-center font-bold text-lg select-none flex-shrink-0">
           ${name.charAt(0).toUpperCase()}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="font-bold text-black truncate flex items-center gap-2">
+          <div class="font-bold text-black truncate flex items-center gap-2 text-sm">
             ${name}
-            ${isMe ? '<span class="px-2 py-0.5 bg-neo-pink text-[10px] uppercase font-black tracking-widest border-2 border-black shadow-[2px_2px_0px_#000] rounded">YOU</span>' : ''}
+            ${isMe ? '<span class="px-1.5 py-0.5 bg-neo-pink text-[9px] uppercase font-black border-2 border-black rounded">YOU</span>' : ''}
           </div>
-          <div class="text-xs font-mono font-bold text-gray-500 truncate mt-0.5">Online</div>
+          <div class="text-[10px] font-mono font-bold text-gray-400 truncate">Online</div>
         </div>
-        <div class="w-4 h-4 bg-success rounded-full border-2 border-black animate-pulse shadow-sm"></div>
+        <div class="flex flex-col items-end gap-1">
+          <div class="w-3 h-3 bg-success rounded-full border-2 border-black animate-pulse"></div>
+          ${actionBtn}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderIncomingRequests() {
+  const container = document.getElementById('collab-incoming-list');
+  if (!container) return;
+
+  if (incomingRequests.length === 0) {
+    container.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-6">No pending requests</div>';
+    return;
+  }
+
+  container.innerHTML = incomingRequests.map(r => {
+    const name = r.requester_email ? r.requester_email.split('@')[0] : 'Unknown';
+    return `
+      <div class="p-3 border-3 border-black rounded-xl bg-neo-yellow shadow-neo-sm flex flex-col gap-2">
+        <div class="font-bold text-black text-sm">${name}</div>
+        <div class="text-[10px] font-mono text-black/60">${r.requester_email}</div>
+        <div class="text-[10px] font-mono text-black/40">Wants to peek your vault</div>
+        <div class="flex gap-2 mt-1">
+          <button onclick="respondToRequest('${r.id}','accepted')" class="flex-1 bg-success border-2 border-black text-black text-[10px] font-black uppercase py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">✓ Accept</button>
+          <button onclick="respondToRequest('${r.id}','denied')" class="flex-1 bg-neo-pink border-2 border-black text-black text-[10px] font-black uppercase py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">✕ Deny</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderApprovedPeeks() {
+  const container = document.getElementById('collab-approved-list');
+  if (!container) return;
+
+  if (approvedPeeks.length === 0) {
+    container.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-6">No approved access yet</div>';
+    return;
+  }
+
+  container.innerHTML = approvedPeeks.map(r => {
+    const name = r.target_email || r.target_id.slice(0, 8);
+    return `
+      <div class="p-3 border-3 border-black rounded-xl bg-neo-green shadow-neo-sm flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full border-2 border-black bg-white flex items-center justify-center font-bold text-sm">
+          ${name.charAt(0).toUpperCase()}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-black text-xs truncate">${name}</div>
+          <div class="text-[9px] font-mono text-black/50">Access granted</div>
+        </div>
+        <button onclick="openCollabPeek('${r.target_id}','${r.target_email || r.target_id}')" class="bg-black text-white text-[9px] font-black uppercase px-2 py-1 rounded shadow-sm hover:bg-gray-800 transition-colors">👁 View</button>
       </div>
     `;
   }).join('');
@@ -1159,5 +1403,334 @@ function renderCollabFeed() {
         </div>
       </div>
     </div>
+  `).join('');
+}
+
+// ─── FRIENDS SYSTEM ────────────────────────────────────
+let friends = []; // accepted collab_requests in both directions
+let chatFriendId = null;
+let chatFriendEmail = null;
+let chatMessages = [];
+let messageChannel = null;
+
+async function getFriends() {
+  const { data } = await sb.from('collab_requests').select('*').eq('status', 'accepted');
+  if (!data) return [];
+  return data.map(r => {
+    if (r.requester_id === user.id) return { id: r.target_id, email: r.target_email || r.target_id.slice(0, 8) };
+    return { id: r.requester_id, email: r.requester_email };
+  });
+}
+
+async function renderFriendsList() {
+  const container = document.getElementById('collab-friends-list');
+  if (!container) return;
+
+  friends = await getFriends();
+
+  if (friends.length === 0) {
+    container.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-6 leading-relaxed">No friends yet.<br/>Send a request below!</div>';
+    return;
+  }
+
+  container.innerHTML = friends.map(f => {
+    const name = f.email.split('@')[0];
+    const colors = ['bg-neo-yellow', 'bg-neo-pink', 'bg-neo-blue', 'bg-neo-green', 'bg-neo-purple'];
+    const color = colors[name.charCodeAt(0) % colors.length];
+    return `
+      <div class="p-3 border-3 border-black rounded-xl bg-white shadow-neo-sm flex items-center gap-3">
+        <div class="w-10 h-10 flex-shrink-0 rounded-full border-3 border-black ${color} flex items-center justify-center font-bold text-lg">
+          ${name.charAt(0).toUpperCase()}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-black text-sm truncate">${name}</div>
+          <div class="text-[10px] font-mono text-gray-400 truncate">${f.email}</div>
+        </div>
+        <div class="flex flex-col gap-1">
+          <button onclick="openChat('${f.id}','${f.email}')"
+            class="bg-neo-blue border-2 border-black text-black text-[9px] font-black px-2 py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">💬 Chat</button>
+          <button onclick="openCollabPeek('${f.id}','${f.email}')"
+            class="bg-neo-yellow border-2 border-black text-black text-[9px] font-black px-2 py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">👁 Vault</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ─── USER SEARCH & FRIEND REQUEST ──────────────────────
+let searchTimeout = null;
+
+async function searchUsers() {
+  const input = document.getElementById('user-search-input');
+  const q = (input?.value || '').trim();
+  const results = document.getElementById('user-search-results');
+  if (!results) return;
+
+  clearTimeout(searchTimeout);
+  if (q.length < 2) {
+    results.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-2">Type to search users...</div>';
+    return;
+  }
+
+  results.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-2 animate-pulse">Searching...</div>';
+
+  searchTimeout = setTimeout(async () => {
+    const { data } = await sb.from('profiles')
+      .select('id, email, display_name')
+      .ilike('display_name', `%${q}%`)
+      .neq('id', user.id)
+      .limit(8);
+
+    const users = data || [];
+    if (users.length === 0) {
+      results.innerHTML = '<div class="text-center text-gray-400 font-mono text-xs mt-2">No users found</div>';
+      return;
+    }
+
+    results.innerHTML = users.map(p => {
+      const name = p.display_name || p.email.split('@')[0];
+      const colors = ['bg-neo-yellow', 'bg-neo-pink', 'bg-neo-blue', 'bg-neo-green', 'bg-neo-purple'];
+      const color = colors[name.charCodeAt(0) % colors.length];
+      const alreadySent = outgoingRequests[p.email] || outgoingRequests[p.id];
+      return `
+        <div class="flex items-center gap-3 p-2 border-2 border-black rounded-xl bg-white hover:bg-gray-50 transition-colors">
+          <div class="w-9 h-9 flex-shrink-0 rounded-full border-2 border-black ${color} flex items-center justify-center font-bold text-sm">
+            ${name.charAt(0).toUpperCase()}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-black text-sm truncate">${esc(name)}</div>
+            <div class="text-[10px] font-mono text-gray-400 truncate">${esc(p.email)}</div>
+          </div>
+          ${alreadySent
+          ? `<span class="text-[9px] font-black text-gray-400 uppercase border border-gray-300 rounded px-2 py-1">${alreadySent}</span>`
+          : `<button onclick="sendDirectFriendRequest('${p.id}','${p.email}')"
+                class="bg-primary border-2 border-black rounded-lg px-2 py-1 font-black text-black text-[9px] uppercase shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all flex-shrink-0">
+                Add
+              </button>`
+        }
+        </div>
+      `;
+    }).join('');
+  }, 300);
+}
+
+async function sendDirectFriendRequest(targetId, targetEmail) {
+  const { error } = await sb.from('collab_requests').insert({
+    requester_id: user.id,
+    requester_email: user.email,
+    target_id: targetId,
+    target_email: targetEmail,
+    status: 'pending'
+  });
+  if (error) { showToast('Could not send request: ' + error.message, 'error'); return; }
+  showToast(`Friend request sent to ${targetEmail.split('@')[0]}! ✓`, 'success');
+  await refreshCollabRequests();
+  searchUsers(); // re-render to show "pending" state
+}
+
+
+// No longer needed: all friend requests now use real UUIDs from profile search
+async function claimPendingRequests() { /* no-op */ }
+
+
+function openChat(friendId, friendEmail) {
+  chatFriendId = friendId;
+  chatFriendEmail = friendEmail;
+  chatMessages = [];
+
+  const panel = document.getElementById('chat-panel');
+  const nameEl = document.getElementById('chat-friend-name');
+  if (nameEl) nameEl.textContent = friendEmail.split('@')[0].toUpperCase();
+  if (panel) { panel.classList.remove('hidden', 'translate-y-full'); panel.classList.add('flex'); }
+
+  loadMessages();
+  subscribeToMessages();
+}
+
+function closeChat() {
+  const panel = document.getElementById('chat-panel');
+  if (panel) { panel.classList.add('hidden'); panel.classList.remove('flex'); }
+  if (messageChannel) { sb.removeChannel(messageChannel); messageChannel = null; }
+  chatFriendId = null;
+}
+
+async function loadMessages() {
+  if (!chatFriendId) return;
+  const { data } = await sb.from('messages')
+    .select('*')
+    .or(`and(sender_id.eq.${user.id},receiver_id.eq.${chatFriendId}),and(sender_id.eq.${chatFriendId},receiver_id.eq.${user.id})`)
+    .order('created_at', { ascending: true })
+    .limit(100);
+  chatMessages = data || [];
+  renderMessages();
+
+  // Mark received messages as read
+  await sb.from('messages').update({ is_read: true })
+    .eq('receiver_id', user.id).eq('sender_id', chatFriendId).eq('is_read', false);
+}
+
+function subscribeToMessages() {
+  if (messageChannel) sb.removeChannel(messageChannel);
+  messageChannel = sb.channel(`chat-${[user.id, chatFriendId].sort().join('-')}`)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+      const msg = payload.new;
+      if ((msg.sender_id === chatFriendId && msg.receiver_id === user.id) ||
+        (msg.sender_id === user.id && msg.receiver_id === chatFriendId)) {
+        chatMessages.push(msg);
+        renderMessages();
+      }
+    })
+    .subscribe();
+}
+
+function renderMessages() {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  if (chatMessages.length === 0) {
+    container.innerHTML = '<div class="text-center font-mono text-xs text-gray-400 mt-8">No messages yet. Say hi! 👋</div>';
+    return;
+  }
+
+  container.innerHTML = chatMessages.map(m => {
+    const mine = m.sender_id === user.id;
+    const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="flex ${mine ? 'justify-end' : 'justify-start'} mb-2">
+        <div class="max-w-[75%] ${mine
+        ? 'bg-primary border-2 border-black rounded-2xl rounded-tr-sm shadow-neo-sm'
+        : 'bg-white border-2 border-black rounded-2xl rounded-tl-sm shadow-neo-sm'} px-3 py-2">
+          <div class="text-sm font-bold text-black leading-snug">${esc(m.content)}</div>
+          <div class="text-[9px] font-mono text-black/50 mt-0.5 ${mine ? 'text-right' : 'text-left'}">${time}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+async function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const content = (input?.value || '').trim();
+  if (!content || !chatFriendId) return;
+  input.value = '';
+
+  const { error } = await sb.from('messages').insert({
+    sender_id: user.id,
+    receiver_id: chatFriendId,
+    sender_email: user.email,
+    content
+  });
+
+  if (error) {
+    showToast('Send failed: ' + error.message, 'error');
+    input.value = content; // restore text so user doesn't lose it
+    return;
+  }
+
+  // Always reload after sending (realtime may not be active yet)
+  await loadMessages();
+}
+
+function chatInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+}
+
+// ─── MIND MAP SHARING ───────────────────────────────────
+let shareMapName = null;
+
+async function openShareMapModal(mapName) {
+  shareMapName = mapName;
+  const modal = document.getElementById('modal-share-map');
+  const title = document.getElementById('share-map-name-display');
+  const list = document.getElementById('share-friends-list');
+  if (!modal) return;
+  if (title) title.textContent = `"${mapName}"`;
+  if (list) list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center py-4">Loading friends...</div>';
+  modal.classList.remove('hidden'); modal.classList.add('flex');
+
+  friends = await getFriends();
+  if (!list) return;
+  if (friends.length === 0) {
+    list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center py-4">No friends yet to share with.</div>';
+    return;
+  }
+  list.innerHTML = friends.map(f => {
+    const name = f.email.split('@')[0];
+    return `
+      <button onclick="shareMindMap('${mapName.replace(/'/g, "\\'")}','${f.id}','${f.email}')"
+        class="w-full flex items-center gap-3 p-3 border-2 border-black rounded-xl bg-white hover:bg-neo-green shadow-neo-sm hover:shadow-none transition-all text-left">
+        <div class="w-8 h-8 flex-shrink-0 rounded-full border-2 border-black bg-neo-yellow flex items-center justify-center font-bold">
+          ${name.charAt(0).toUpperCase()}
+        </div>
+        <div>
+          <div class="font-bold text-sm text-black">${name}</div>
+          <div class="text-[10px] font-mono text-gray-400">${f.email}</div>
+        </div>
+        <span class="material-icons-outlined text-black ml-auto">send</span>
+      </button>
+    `;
+  }).join('');
+}
+
+function closeShareMapModal() {
+  const modal = document.getElementById('modal-share-map');
+  if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+  shareMapName = null;
+}
+
+async function shareMindMap(mapName, friendId, friendEmail) {
+  // Add friendId to the shared_with array for this map
+  const { data: map, error: fetchErr } = await sb.from('mindmaps')
+    .select('*').eq('user_id', user.id).eq('name', mapName).single();
+
+  if (fetchErr || !map) { alert('Map not found.'); return; }
+
+  const alreadyShared = (map.shared_with || []).includes(friendId);
+  if (alreadyShared) {
+    closeShareMapModal();
+    alert(`Already shared with ${friendEmail.split('@')[0]}!`);
+    return;
+  }
+
+  const newSharedWith = [...(map.shared_with || []), friendId];
+  const { error } = await sb.from('mindmaps')
+    .update({ shared_with: newSharedWith }).eq('id', map.id);
+
+  if (error) { showToast('Could not share: ' + error.message, 'error'); return; }
+  closeShareMapModal();
+
+  // Also send a chat message notification
+  await sb.from('messages').insert({
+    sender_id: user.id,
+    receiver_id: friendId,
+    sender_email: user.email,
+    content: `📊 I shared a mind map with you: "${mapName}". Check your Dashboard!`
+  });
+
+  showToast(`Shared "${mapName}" with ${friendEmail.split('@')[0]}! ✓`, 'success');
+}
+
+// ─── DASHBOARD: SHARED MAPS WIDGET ──────────────────────
+async function renderDashboardSharedMaps() {
+  const container = document.getElementById('dashboard-shared-maps');
+  if (!container || !sb || !user) return;
+
+  const { data } = await sb.from('mindmaps')
+    .select('name, user_id, updated_at')
+    .contains('shared_with', [user.id])
+    .order('updated_at', { ascending: false });
+
+  const maps = data || [];
+  if (maps.length === 0) {
+    container.innerHTML = '<div class="text-[10px] font-mono text-gray-400 text-center py-2">None shared with you yet</div>';
+    return;
+  }
+  container.innerHTML = maps.map(m => `
+    <button onclick="switchView('mindmap'); setTimeout(() => loadSharedMap('${m.user_id}','${m.name.replace(/'/g, "\\'")}'), 300)"
+      class="w-full text-left flex items-center gap-2 px-3 py-2 border-2 border-black dark:border-white rounded-lg bg-neo-blue/30 hover:bg-neo-blue hover:shadow-neo-sm font-bold text-[11px] text-black dark:text-black transition-all">
+      <span class="material-icons-outlined text-sm flex-shrink-0">share</span>
+      <span class="truncate">${esc(m.name)}</span>
+    </button>
   `).join('');
 }
