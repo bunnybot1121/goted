@@ -142,10 +142,14 @@
         </div>
 
         <!-- Typography -->
-        <h1 class="text-5xl font-display font-black tracking-tighter flex items-center justify-center relative z-20">
-          <span class="text-black dark:text-white">THE</span><span
-            class="text-neo-pink logo-wave ml-1 relative z-20">GOTED</span>
-          <span class="text-primary text-3xl absolute -right-9 top-1 animate-pulse">✦</span>
+        <h1
+          class="text-5xl font-display font-black tracking-tighter uppercase relative flex items-center justify-center group cursor-pointer pt-2 px-6">
+          <span
+            class="bg-black text-white px-3 py-1 transform -rotate-3 shadow-[4px_4px_0px_#000] inline-block -translate-y-1">THE</span>
+          <span class="text-black dark:text-white ml-3 text-shadow-neo tracking-normal inline-block">GOTED</span>
+          <svg class="w-8 h-8 absolute -right-2 top-0 fill-primary animate-pulse" viewBox="0 0 100 100">
+            <path d="M50 0 L61 35 L98 35 L68 57 L79 91 L50 70 L21 91 L32 57 L2 35 L39 35 Z"></path>
+          </svg>
         </h1>
 
         <!-- Welcome Badge -->
@@ -226,11 +230,16 @@
       class="fixed left-0 top-0 bottom-0 w-56 border-r-3 border-black dark:border-white bg-white dark:bg-gray-800 z-[60] flex flex-col py-6 px-3 gap-2 shadow-neo-sm overflow-y-auto hide-scrollbar transition-all duration-300 ease-in-out">
 
       <!-- Logo -->
-      <div class="flex items-center gap-2 px-2 mb-4 overflow-hidden">
-        <img src="icons/brain.png" alt="brain" class="w-8 h-8 flex-shrink-0" />
-        <span
-          class="sidebar-label font-display font-black text-lg tracking-tight text-black dark:text-white whitespace-nowrap">THE
-          GOTED</span>
+      <div class="flex items-center px-1 mb-4 overflow-hidden pt-2">
+        <h1
+          class="sidebar-label text-2xl font-black tracking-tighter uppercase relative flex items-center group cursor-pointer pr-4">
+          <span
+            class="bg-black text-white px-2 py-0.5 transform -rotate-3 shadow-[2px_2px_0px_#000] inline-block -translate-y-0.5 text-base">THE</span>
+          <span class="text-black dark:text-white ml-1.5 text-shadow-neo tracking-normal inline-block">GOTED</span>
+          <svg class="w-4 h-4 absolute right-0 -top-1 fill-primary animate-pulse" viewBox="0 0 100 100">
+            <path d="M50 0 L61 35 L98 35 L68 57 L79 91 L50 70 L21 91 L32 57 L2 35 L39 35 Z"></path>
+          </svg>
+        </h1>
       </div>
 
       <!-- Nav Label -->
@@ -399,19 +408,21 @@
             </aside>
 
             <!-- SAVED MIND MAPS WIDGET (below filters) -->
-            <aside class="hidden md:flex md:col-span-2 lg:col-span-2 flex-col gap-4 overflow-y-auto pb-4 -mt-0"
+            <aside class="hidden md:flex md:col-span-2 lg:col-span-2 flex-col gap-4 overflow-y-auto pb-4"
               style="grid-row: 2;">
               <div
-                class="bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-xl p-4 shadow-neo dark:shadow-neo-dark flex-shrink-0">
-                <h3 class="font-bold text-base mb-3 flex items-center gap-2 text-black dark:text-white">
-                  <span class="material-icons-outlined text-lg">account_tree</span>
+                class="bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-xl p-4 shadow-neo dark:shadow-neo-dark flex-shrink-0 mt-2">
+                <h3 class="font-bold text-lg mb-4 flex items-center gap-2 text-black dark:text-white">
+                  <span class="material-icons-outlined">account_tree</span>
                   Mind Maps
                 </h3>
-                <div id="dashboard-mindmaps" class="flex flex-col gap-2">
-                  <div class="text-[10px] font-mono text-gray-400 text-center py-2">Loading...</div>
+                <div id="dashboard-mindmaps" class="flex flex-col gap-2 mb-4">
+                  <div
+                    class="text-[10px] font-mono text-black/50 dark:text-white/50 bg-gray-100 dark:bg-gray-700/50 border-2 border-dashed border-black/20 dark:border-white/20 rounded-lg p-3 text-center">
+                    Loading...</div>
                 </div>
                 <button onclick="switchView('mindmap')"
-                  class="w-full mt-3 border-2 border-black dark:border-white rounded-lg py-1.5 text-[10px] font-black uppercase tracking-wider text-black dark:text-white hover:bg-primary hover:shadow-neo-sm transition-all">
+                  class="w-full border-3 border-black dark:border-white rounded-lg py-2 text-[11px] font-black uppercase tracking-wider text-black dark:text-white bg-white dark:bg-gray-700 hover:bg-primary dark:hover:bg-primary hover:text-black shadow-neo-sm hover:translate-x-[1px] hover:translate-y-[1px] hover:shadow-none transition-all">
                   + New Map
                 </button>
               </div>

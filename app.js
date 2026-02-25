@@ -739,7 +739,7 @@ async function renderDashboardMindMaps() {
   const maps = data || [];
 
   if (maps.length === 0) {
-    container.innerHTML = '<div class="text-[10px] font-mono text-gray-400 text-center py-3">No saved maps yet</div>';
+    container.innerHTML = '<div class="text-[10px] font-mono text-black/50 dark:text-white/50 bg-gray-100 dark:bg-gray-700/50 border-2 border-dashed border-black/20 dark:border-white/20 rounded-lg p-3 text-center">No saved maps yet</div>';
     return;
   }
 
@@ -1277,26 +1277,100 @@ async function openCollabPeek(targetUserId, targetEmail) {
   overlay.classList.remove('hidden');
   overlay.classList.add('flex');
 
-  const { data, error } = await sb.from('items')
-    .select('*')
-    .eq('user_id', targetUserId)
-    .eq('status', 'active')
-    .order('created_at', { ascending: false });
+  // Fetch from the secure RPC instead of directly from items. 
+  // This hides content for unshared items but returns the title.
+  const { data, error } = await sb.rpc('get_friend_vault', { target_uid: targetUserId });
 
   const list = document.getElementById('collab-peek-list');
-  if (error || !data || data.length === 0) {
+  if (error) {
+    list.innerHTML = `<div class="font-mono text-xs text-neo-pink text-center mt-10">Error loading vault: ${error.message}</div>`;
+    return;
+  }
+  if (!data || data.length === 0) {
     list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center mt-10">EMPTY VAULT</div>';
     return;
   }
 
   const typeColors = { note: 'bg-neo-green', link: 'bg-neo-purple', code: 'bg-neo-blue', idea: 'bg-neo-yellow', file: 'bg-neo-pink' };
-  list.innerHTML = data.map(i => `
-    <div class="${typeColors[i.type] || 'bg-white'} rounded-xl border-3 border-black shadow-neo p-4">
-      <div class="font-bold text-sm text-black">${esc(i.title || 'UNTITLED')}</div>
-      <div class="text-xs font-mono text-black/60 mt-1 line-clamp-2">${esc((i.content || '').substring(0, 80))}</div>
-      <div class="mt-2 text-[10px] font-bold text-black/40 uppercase">${i.type} · ${i.category || 'no category'}</div>
-    </div>
-  `).join('');
+
+  list.innerHTML = data.map(i => {
+    const isShared = i.is_shared;
+    const colorClass = typeColors[i.type] || 'bg-white';
+    const escapedTitle = esc(i.title || 'UNTITLED');
+
+    if (isShared) {
+      // Unlocked item (Full access)
+      return `
+        <div class="${colorClass} rounded-xl border-3 border-black shadow-neo p-4 relative">
+          <div class="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-success border-2 border-black flex items-center justify-center rotate-12 shadow-sm">
+            <span class="material-icons-outlined text-black text-sm">lock_open</span>
+          </div>
+          <div class="font-bold text-sm text-black">${escapedTitle}</div>
+          <div class="text-xs font-mono text-black/60 mt-1 line-clamp-2">${esc((i.content || '').substring(0, 80))}</div>
+          <div class="mt-3 flex justify-between items-center text-[10px] font-bold text-black/40 uppercase">
+             <span>${i.type} · ${i.category || 'no category'}</span>
+             <button onclick="selectAndOpen('${i.id}'); closeCollabPeek()" class="text-black hover:text-white underline">VIEW FULL</button>
+          </div>
+        </div>
+      `;
+    } else {
+      // Locked item (Title only)
+      return `
+        <div class="bg-gray-100 dark:bg-gray-700/50 rounded-xl border-3 border-black/30 dark:border-white/20 p-4 relative group opacity-75 hover:opacity-100 transition-opacity">
+          <div class="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-neo-pink border-2 border-black flex items-center justify-center -rotate-12 shadow-sm">
+            <span class="material-icons-outlined text-black text-sm">lock</span>
+          </div>
+          <div class="font-bold text-sm text-black/60 dark:text-white/60 line-through decoration-2 decoration-neo-pink">${escapedTitle}</div>
+          <div class="text-[10px] font-mono text-neo-pink font-bold mt-1 uppercase flex items-center gap-1">
+            <span class="material-icons-outlined text-[12px]">visibility_off</span> CONTENT ENCRYPTED
+          </div>
+          <div class="mt-4">
+             <button onclick="requestItemAccess('${i.id}', '${escapedTitle.replace(/'/g, "\\'")}', '${targetUserId}', '${targetEmail}', this)" 
+                class="w-full bg-white dark:bg-black border-2 border-black dark:border-white px-3 py-2 text-xs font-black uppercase text-black dark:text-white shadow-neo-sm hover:translate-y-[1px] hover:shadow-none transition-all flex justify-center items-center gap-2">
+                <span class="material-icons-outlined text-sm">key</span> Request Access
+             </button>
+          </div>
+        </div>
+      `;
+    }
+  }).join('');
+}
+
+async function requestItemAccess(itemId, itemTitle, targetId, targetEmail, btnEl) {
+  // Disable button immediately
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="material-icons-outlined text-sm animate-spin">sync</span> REQUESTING...';
+    btnEl.classList.add('opacity-50', 'cursor-not-allowed');
+  }
+
+  const { error } = await sb.from('collab_requests').insert({
+    requester_id: user.id,
+    requester_email: user.email,
+    target_id: targetId,
+    target_email: targetEmail,
+    item_id: itemId,
+    item_title: itemTitle,
+    status: 'pending'
+  });
+
+  if (error) {
+    showToast('Failed to request item: ' + error.message, 'error');
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = '<span class="material-icons-outlined text-sm">key</span> Request Access';
+      btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
+    }
+    return;
+  }
+
+  showToast(`Requested access to "${itemTitle}"!`, 'success');
+  if (btnEl) {
+    btnEl.innerHTML = '<span class="material-icons-outlined text-sm text-success">check</span> SENT';
+    btnEl.classList.replace('bg-white', 'bg-neo-yellow');
+    btnEl.classList.replace('dark:bg-black', 'bg-neo-yellow');
+    btnEl.classList.replace('text-white', 'text-black');
+  }
 }
 
 function closeCollabPeek() {
@@ -1367,11 +1441,15 @@ function renderIncomingRequests() {
 
   container.innerHTML = incomingRequests.map(r => {
     const name = r.requester_email ? r.requester_email.split('@')[0] : 'Unknown';
+    const requestText = r.item_title
+      ? `Wants to view item: <strong>${esc(r.item_title)}</strong>`
+      : 'Wants to peek your vault';
+
     return `
       <div class="p-3 border-3 border-black rounded-xl bg-neo-yellow shadow-neo-sm flex flex-col gap-2">
         <div class="font-bold text-black text-sm">${name}</div>
         <div class="text-[10px] font-mono text-black/60">${r.requester_email}</div>
-        <div class="text-[10px] font-mono text-black/40">Wants to peek your vault</div>
+        <div class="text-[10px] font-mono text-black/60 bg-white/50 p-1 rounded border border-black/20">${requestText}</div>
         <div class="flex gap-2 mt-1">
           <button onclick="respondToRequest('${r.id}','accepted')" class="flex-1 bg-success border-2 border-black text-black text-[10px] font-black uppercase py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">✓ Accept</button>
           <button onclick="respondToRequest('${r.id}','denied')" class="flex-1 bg-neo-pink border-2 border-black text-black text-[10px] font-black uppercase py-1 rounded shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">✕ Deny</button>
@@ -1390,7 +1468,13 @@ function renderApprovedPeeks() {
     return;
   }
 
-  container.innerHTML = approvedPeeks.map(r => {
+  // Deduplicate by target_id so a friend only shows up once
+  const uniqueTargets = {};
+  approvedPeeks.forEach(r => {
+    if (!uniqueTargets[r.target_id]) uniqueTargets[r.target_id] = r;
+  });
+
+  container.innerHTML = Object.values(uniqueTargets).map(r => {
     const name = r.target_email || r.target_id.slice(0, 8);
     return `
       <div class="p-3 border-3 border-black rounded-xl bg-neo-green shadow-neo-sm flex items-center gap-3">
