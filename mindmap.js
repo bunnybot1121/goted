@@ -523,6 +523,7 @@ async function confirmSaveMap() {
     setTimeout(() => statusEl.classList.add('opacity-0'), 2500);
   }
   await renderSavedMaps();
+  if (typeof load === 'function') setTimeout(() => load(), 100);
 }
 
 function closeSaveMapModal() {
@@ -530,12 +531,13 @@ function closeSaveMapModal() {
   if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
 }
 
-async function loadMindMap(name) {
+async function loadMindMap(name, ownerId = null) {
   if (!sb || !user) return;
+  const targetId = ownerId || user.id;
 
   const { data, error } = await sb.from('mindmaps')
     .select('*')
-    .eq('user_id', user.id)
+    .eq('user_id', targetId)
     .eq('name', name)
     .single();
 

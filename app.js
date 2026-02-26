@@ -721,7 +721,33 @@ async function load() {
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
-  items = data || [];
+
+  let allItems = data || [];
+
+  // Also fetch mindmaps
+  if (sb && user) {
+    const { data: mindmapData } = await sb.from('mindmaps')
+      .select('id, name, updated_at')
+      .eq('user_id', user.id)
+      .order('updated_at', { ascending: false });
+
+    if (mindmapData) {
+      const mmaps = mindmapData.map(m => ({
+        id: 'mm_' + m.id,
+        title: m.name,
+        type: 'mindmap',
+        category: 'Mind Map',
+        created_at: m.updated_at,
+        status: STATUS.ACTIVE,
+        isMindMap: true,
+        content: 'Mind map visualization'
+      }));
+      allItems = [...allItems, ...mmaps];
+      allItems.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+  }
+
+  items = allItems;
   render();
   renderCalendar();
 }
@@ -773,7 +799,8 @@ function render() {
     link: 'bg-neo-purple',
     code: 'bg-neo-blue',
     idea: 'bg-neo-yellow',
-    file: 'bg-neo-pink'
+    file: 'bg-neo-pink',
+    mindmap: 'bg-primary'
   };
 
   const typeIcons = {
@@ -781,12 +808,13 @@ function render() {
     link: 'link',
     code: 'code',
     idea: 'lightbulb',
-    file: 'insert_drive_file'
+    file: 'insert_drive_file',
+    mindmap: 'account_tree'
   };
 
   if (!f.length) {
     list.innerHTML = `
-      <div class="bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-xl p-8 text-center shadow-neo">
+      <div class="col-span-full bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-xl p-8 text-center shadow-neo">
         <div class="mb-2"><img src="icons/mailbox.png" alt="empty" class="w-12 h-12 mx-auto" /></div>
         <div class="font-bold uppercase tracking-widest text-gray-400 text-xs">Nothing in the vault</div>
       </div>`;
@@ -798,6 +826,8 @@ function render() {
     const colorClass = typeColors[type] || 'bg-white';
     const icon = typeIcons[type] || 'description';
     const isActive = current?.id === i.id;
+    // Specific click handler depending on mind map or entry
+    const clickHandler = i.isMindMap ? `switchView('mindmap'); setTimeout(() => loadMindMap('${esc(i.title).replace(/'/g, "\\\\\\'")}'), 300)` : `selectAndOpen('${i.id}')`;
 
     // Tag formatting
     let tagsHtml = '';
@@ -808,26 +838,26 @@ function render() {
     }
 
     return `
-    <div class="${colorClass} rounded-xl border-3 border-black dark:border-white ${isActive ? 'shadow-neo-lg -translate-y-1' : 'shadow-neo'} relative group hover:-translate-y-1 transition-all duration-200 cursor-pointer" 
-         onclick="select('${i.id}')">
-      <div class="absolute -top-3 -right-3 bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-full p-1 z-10">
+    <div class="flex flex-col h-full ${colorClass} rounded-xl border-3 border-black dark:border-white ${isActive ? 'shadow-neo-lg -translate-y-1' : 'shadow-neo'} relative group hover:-translate-y-1 transition-all duration-200 cursor-pointer" 
+         onclick="${clickHandler}">
+      <div class="absolute -top-3 -right-3 bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-full p-1 z-10 transition-transform group-hover:scale-110">
         <span class="material-icons-outlined text-lg block text-black dark:text-white">${icon}</span>
       </div>
-      <div class="p-5">
-        <div class="bg-white dark:bg-gray-800 border-2 border-black dark:border-white rounded px-2 py-0.5 inline-block text-[10px] font-bold mb-3 uppercase tracking-wider text-black dark:text-white">
+      <div class="p-5 flex flex-col flex-1">
+        <div class="bg-white dark:bg-gray-800 border-2 border-black dark:border-white rounded px-2 py-0.5 self-start text-[10px] font-bold mb-3 uppercase tracking-wider text-black dark:text-white">
           ${type}
         </div>
-        <h2 class="text-lg font-bold leading-tight text-black flex items-center justify-between">
-          <span class="truncate pr-4">${esc(i.title || 'UNTITLED')}</span>
+        <h2 class="text-lg font-bold leading-tight text-black break-words pr-4 line-clamp-2">
+          ${esc(i.title || 'UNTITLED')}
         </h2>
         
-        <div class="mt-2 text-xs font-mono font-bold text-black/60 truncate">
-          ${esc((i.content || '').substring(0, 60)) || 'No content preview...'}
+        <div class="mt-2 text-xs font-mono font-bold text-black/60 break-words whitespace-pre-wrap flex-1 line-clamp-4">
+          ${esc((i.content || '').substring(0, 150)) || 'No content preview...'}
         </div>
         
         ${tagsHtml}
         
-        <div class="mt-4 flex justify-between items-center text-[10px] font-bold text-black border-t-2 border-dashed border-black/20 dark:border-white/20 pt-2">
+        <div class="mt-4 flex justify-between items-center text-[10px] font-bold text-black border-t-2 border-dashed border-black/20 dark:border-white/20 pt-2 shrink-0">
            <span class="uppercase">${i.category || 'NO CATEGORY'}</span>
            <span>${new Date(i.created_at).toLocaleDateString()}</span>
         </div>
@@ -1050,41 +1080,63 @@ function esc(s) {
 }
 
 // ─── SIDEBAR TOGGLE ────────────────────────────
-let sidebarExpanded = true; // starts expanded
+let sidebarExpanded = window.innerWidth >= 768; // Start expanded on desktop, collapsed on mobile
 
 function toggleSidebar() {
   const sidebar = document.getElementById('master-sidebar');
   const content = document.getElementById('content-wrapper');
   const nav = document.getElementById('top-nav');
   const labels = document.querySelectorAll('.sidebar-label');
+  const backdrop = document.getElementById('sidebar-backdrop');
   if (!sidebar) return;
 
   sidebarExpanded = !sidebarExpanded;
+  const isMobile = window.innerWidth < 768;
 
-  if (sidebarExpanded) {
-    // Expand: wide with labels
-    sidebar.style.width = '14rem'; // w-56
-    if (content) content.style.marginLeft = '14rem';
-    if (nav) nav.style.left = '14rem';
+  if (isMobile) {
+    if (sidebarExpanded) {
+      sidebar.classList.remove('-translate-x-full');
+      if (backdrop) backdrop.classList.remove('hidden');
+    } else {
+      sidebar.classList.add('-translate-x-full');
+      if (backdrop) backdrop.classList.add('hidden');
+    }
+    // Ensure width and labels are visible when sidebar is open on mobile
+    sidebar.style.width = '14rem';
     labels.forEach(el => {
       el.style.display = '';
       el.style.opacity = '1';
     });
   } else {
-    // Collapse: narrow icons only
-    sidebar.style.width = '4.5rem'; // ~w-18, enough for icon + padding
-    if (content) content.style.marginLeft = '4.5rem';
-    if (nav) nav.style.left = '4.5rem';
-    labels.forEach(el => {
-      el.style.opacity = '0';
-      el.style.display = 'none';
-    });
+    // Desktop behavior
+    if (sidebarExpanded) {
+      // Expand: wide with labels
+      sidebar.style.width = '14rem'; // w-56
+      if (content) content.style.marginLeft = '14rem';
+      if (nav) nav.style.left = '14rem';
+      labels.forEach(el => {
+        el.style.display = '';
+        el.style.opacity = '1';
+      });
+    } else {
+      // Collapse: narrow icons only
+      sidebar.style.width = '4.5rem'; // ~w-18, enough for icon + padding
+      if (content) content.style.marginLeft = '4.5rem';
+      if (nav) nav.style.left = '4.5rem';
+      labels.forEach(el => {
+        el.style.opacity = '0';
+        el.style.display = 'none';
+      });
+    }
   }
 }
 
 function closeSidebarIfOpen() {
-  // No-op: sidebar is always visible now
+  if (window.innerWidth < 768 && sidebarExpanded) {
+    toggleSidebar();
+  }
 }
+
 
 // ─── KEYBOARD SHORTCUTS ────────────────────────
 document.addEventListener('keydown', e => {
@@ -1279,24 +1331,41 @@ async function openCollabPeek(targetUserId, targetEmail) {
 
   // Fetch from the secure RPC instead of directly from items. 
   // This hides content for unshared items but returns the title.
-  const { data, error } = await sb.rpc('get_friend_vault', { target_uid: targetUserId });
+  const { data: combinedData, error } = await sb.rpc('get_friend_vault', { target_uid: targetUserId });
 
   const list = document.getElementById('collab-peek-list');
   if (error) {
     list.innerHTML = `<div class="font-mono text-xs text-neo-pink text-center mt-10">Error loading vault: ${error.message}</div>`;
     return;
   }
-  if (!data || data.length === 0) {
+
+  if (!combinedData || combinedData.length === 0) {
     list.innerHTML = '<div class="font-mono text-xs text-gray-400 text-center mt-10">EMPTY VAULT</div>';
     return;
   }
 
-  const typeColors = { note: 'bg-neo-green', link: 'bg-neo-purple', code: 'bg-neo-blue', idea: 'bg-neo-yellow', file: 'bg-neo-pink' };
+  const typeColors = { note: 'bg-neo-green', link: 'bg-neo-purple', code: 'bg-neo-blue', idea: 'bg-neo-yellow', file: 'bg-neo-pink', mindmap: 'bg-neo-yellow' };
 
-  list.innerHTML = data.map(i => {
+  list.innerHTML = combinedData.map(i => {
     const isShared = i.is_shared;
     const colorClass = typeColors[i.type] || 'bg-white';
     const escapedTitle = esc(i.title || 'UNTITLED');
+
+    if (i.type === 'mindmap' && isShared) {
+      return `
+        <div class="${colorClass} rounded-xl border-3 border-black shadow-neo p-4 relative">
+          <div class="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-success border-2 border-black flex items-center justify-center rotate-12 shadow-sm">
+            <span class="material-icons-outlined text-black text-sm">account_tree</span>
+          </div>
+          <div class="font-bold text-sm text-black">${escapedTitle}</div>
+          <div class="text-xs font-mono text-black/60 mt-1 line-clamp-2">${esc((i.content || '').substring(0, 80))}</div>
+          <div class="mt-3 flex justify-between items-center text-[10px] font-bold text-black/40 uppercase">
+             <span>${i.type} · ${i.category || 'no category'}</span>
+             <button onclick="switchView('mindmap'); setTimeout(() => loadMindMap('${i.name.replace(/'/g, "\\'")}', '${targetUserId}'), 300); closeCollabPeek()" class="text-black hover:text-white underline font-bold bg-black/10 px-2 py-1 rounded">OPEN MAP</button>
+          </div>
+        </div>
+      `;
+    }
 
     if (isShared) {
       // Unlocked item (Full access)
@@ -1309,7 +1378,7 @@ async function openCollabPeek(targetUserId, targetEmail) {
           <div class="text-xs font-mono text-black/60 mt-1 line-clamp-2">${esc((i.content || '').substring(0, 80))}</div>
           <div class="mt-3 flex justify-between items-center text-[10px] font-bold text-black/40 uppercase">
              <span>${i.type} · ${i.category || 'no category'}</span>
-             <button onclick="selectAndOpen('${i.id}'); closeCollabPeek()" class="text-black hover:text-white underline">VIEW FULL</button>
+             <button onclick="selectAndOpen('${i.id}'); closeCollabPeek()" class="text-black hover:text-white underline bg-black/10 px-2 py-1 rounded font-bold">VIEW FULL</button>
           </div>
         </div>
       `;
