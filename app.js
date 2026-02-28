@@ -643,21 +643,52 @@ function nextMonth() {
 }
 
 function showDayLog(day) {
-  const list = document.getElementById('day-notes-list');
   const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const relevant = items.filter(i => {
     const d = new Date(i.created_at);
     return d.getDate() === day && d.getMonth() === calMonth && d.getFullYear() === calYear;
   });
 
-  list.innerHTML = `
-    <div class="text-xs font-black mb-2 opacity-50 tracking-widest">${months[calMonth]} ${day}, ${calYear}</div>
-    ${relevant.length ? relevant.map(i => `
-      <div class="bg-white/80 dark:bg-gray-800 border-2 border-black p-3 text-xs font-bold shadow-neo-sm hover:translate-x-1 transition-all cursor-pointer rounded-lg" onclick="selectAndOpen('${i.id}')">
-        ${esc(i.title || 'Untitled')}
+  // Set title
+  document.getElementById('cal-popup-title').innerText = `${months[calMonth]} ${day}, ${calYear}`;
+
+  // Build items list
+  const container = document.getElementById('cal-popup-items');
+  const typeColors = { note: 'bg-green-200 text-green-800', code: 'bg-orange-200 text-orange-800', idea: 'bg-pink-200 text-pink-800', link: 'bg-blue-200 text-blue-800' };
+
+  if (relevant.length) {
+    container.innerHTML = relevant.map(i => {
+      const type = (i.type || 'note').toLowerCase();
+      const badgeColor = typeColors[type] || 'bg-gray-200 text-gray-700';
+      const time = new Date(i.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const preview = (i.content || '').substring(0, 80).replace(/</g, '&lt;');
+      return `
+        <div class="bg-white dark:bg-gray-800 border-3 border-black rounded-xl p-4 shadow-neo-sm hover:translate-y-[-2px] hover:shadow-neo transition-all cursor-pointer" onclick="closeDayPopup(); selectAndOpen('${i.id}')">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border border-black/20 ${badgeColor}">${type.toUpperCase()}</span>
+            <span class="text-[10px] font-mono text-gray-400">${time}</span>
+          </div>
+          <div class="font-bold text-sm text-black dark:text-white mb-1">${esc(i.title || 'Untitled')}</div>
+          ${preview ? `<div class="text-xs font-mono text-gray-500 line-clamp-2">${preview}${i.content && i.content.length > 80 ? '...' : ''}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+  } else {
+    container.innerHTML = `
+      <div class="flex flex-col items-center justify-center py-8 text-center">
+        <span class="text-4xl mb-3">📭</span>
+        <div class="text-sm font-bold text-gray-400 uppercase">No entries this day</div>
+        <div class="text-xs font-mono text-gray-400 mt-1">Brain dump something to fill it!</div>
       </div>
-    `).join('') : '<div class="text-xs font-mono text-gray-400 mt-2">No entries for this day</div>'}
-  `;
+    `;
+  }
+
+  // Show popup
+  document.getElementById('cal-day-popup').classList.remove('hidden');
+}
+
+function closeDayPopup() {
+  document.getElementById('cal-day-popup').classList.add('hidden');
 }
 
 function openClipper() {

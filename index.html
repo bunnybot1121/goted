@@ -694,7 +694,25 @@
             <!-- injected by renderCalendar -->
           </div>
         </div>
-        <div id="day-notes-list" class="max-w-5xl mx-auto w-full mt-4 flex flex-col gap-2"></div>
+
+        <!-- Day Popup Modal -->
+        <div id="cal-day-popup" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"
+          onclick="if(event.target===this)closeDayPopup()">
+          <div class="absolute inset-0 bg-black/40"></div>
+          <div
+            class="relative bg-white dark:bg-gray-900 border-4 border-black rounded-2xl shadow-neo-lg w-full max-w-md max-h-[70vh] flex flex-col overflow-hidden">
+            <!-- Header -->
+            <div class="bg-primary border-b-4 border-black px-5 py-3 flex items-center justify-between flex-shrink-0">
+              <h3 id="cal-popup-title" class="font-bold text-black uppercase tracking-wider text-sm">FEB 28, 2026</h3>
+              <button onclick="closeDayPopup()"
+                class="text-black font-bold text-xl leading-none hover:scale-110 transition-transform">✕</button>
+            </div>
+            <!-- Items List -->
+            <div id="cal-popup-items" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+              <!-- injected by showDayLog -->
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- VIEW: COLLAB -->
