@@ -71,7 +71,7 @@ function buildTutorialUI() {
 
     // Dark overlay
     const overlay = document.createElement('div');
-    overlay.className = 'absolute inset-0 bg-black/40 backdrop-blur-[2px] pointer-events-auto';
+    overlay.className = 'absolute inset-0 bg-black/40 pointer-events-auto';
     tutorialContainer.appendChild(overlay);
 
     // Highlight Box
