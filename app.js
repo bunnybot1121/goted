@@ -73,34 +73,40 @@ window.onload = async () => {
   });
 };
 
+let currentUserProfile = null;
+
+async function loadUserProfile() {
+  if (!sb || !user) return;
+  const { data, error } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  if (data) {
+    currentUserProfile = data;
+    globalProfiles[user.id] = data;
+    const headerUsername = document.getElementById('header-username');
+    const headerAvatar = document.getElementById('header-avatar');
+    if (headerUsername) headerUsername.innerText = data.username || data.display_name || 'anon';
+    if (headerAvatar && data.avatar_url) headerAvatar.src = `assets/avatars/${data.avatar_url}`;
+  }
+}
+
 async function boot(u) {
   if (!u) return;
   user = u;
   show('app');
   switchView('dashboard');
-  // Register/update this user's public profile (for search)
-  await sb.from('profiles').upsert({
-    id: user.id,
-    email: user.email,
-    display_name: user.email.split('@')[0]
-  }, { onConflict: 'id' });
+
+  await loadUserProfile();
+
   await load();
   renderDashboardMindMaps();
   claimPendingRequests();
   await initCollab(); // Make sure profiles finish loading
 
-  // Check if user needs to pick an avatar
-  if (!globalProfiles[user.id] || !globalProfiles[user.id].avatar_url) {
-    const modal = document.getElementById('avatar-modal');
-    const content = document.getElementById('avatar-modal-content');
-    if (modal) {
-      modal.classList.remove('hidden');
-      modal.classList.add('flex');
-      setTimeout(() => {
-        content?.classList.remove('translate-y-8', 'opacity-0');
-        content?.classList.add('translate-y-0', 'opacity-100');
-      }, 50);
-    }
+  if (currentUserProfile && (!currentUserProfile.username || !currentUserProfile.avatar_url)) {
+    openSettings();
+  } else {
+    setTimeout(() => {
+      if (typeof initTutorial === 'function') initTutorial();
+    }, 500);
   }
 }
 
@@ -1211,7 +1217,7 @@ let approvedPeeks = [];     // collab_requests where requester_id = me, status =
 
 let globalProfiles = {};
 async function refreshProfiles() {
-  const { data } = await sb.from('profiles').select('id, email, avatar_url, display_name');
+  const { data } = await sb.from('profiles').select('id, email, avatar_url, display_name, username');
   if (data) {
     data.forEach(p => {
       globalProfiles[p.id] = p;
@@ -1223,14 +1229,119 @@ async function refreshProfiles() {
 function getAvatarHtml(key, sizeClass = 'w-10 h-10', textClass = 'text-lg') {
   const p = globalProfiles[key];
   if (p && p.avatar_url) {
-    return `<img src="./assets/avatars/${p.avatar_url}" class="${sizeClass} rounded-full border-3 border-black object-cover flex-shrink-0 bg-white">`;
+    return `<img src="assets/avatars/${p.avatar_url}" class="${sizeClass} rounded-full border-3 border-black object-cover flex-shrink-0 bg-white">`;
   }
-  const name = p?.display_name || (typeof key === 'string' && key.includes('@') ? key.split('@')[0] : 'U');
+  const name = p?.username || p?.display_name || (typeof key === 'string' && key.includes('@') ? key.split('@')[0] : 'U');
   const colors = ['bg-neo-yellow', 'bg-neo-pink', 'bg-neo-blue', 'bg-neo-green', 'bg-neo-purple'];
   const color = colors[name.charCodeAt(0) % colors.length];
   return `<div class="${sizeClass} flex-shrink-0 rounded-full border-3 border-black ${color} flex items-center justify-center font-bold ${textClass} select-none text-black">
     ${name.charAt(0).toUpperCase()}
   </div>`;
+}
+
+// ─── SETTINGS MODAL ────────────────────────────
+const SETTINGS_AVATARS = [
+  'artist.png', 'hacker.png', 'ninja.png', 'robot.png',
+  'avatar_1.jpg', 'avatar_2.jpg', 'avatar_3.jpg', 'avatar_4.jpg',
+  'avatar_5.jpg', 'avatar_6.jpg', 'avatar_7.jpg', 'avatar_8.jpg',
+  'avatar_9.jpg', 'avatar_10.jpg', 'avatar_11.jpg', 'avatar_12.jpg',
+  'avatar_13.jpg', 'avatar_14.jpg'
+];
+
+function openSettings() {
+  const modal = document.getElementById('settings-overlay');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  if (currentUserProfile) {
+    document.getElementById('settings-username').value = currentUserProfile.username || '';
+  }
+
+  const container = document.getElementById('settings-avatars');
+  if (container) {
+    const currentAvatar = currentUserProfile?.avatar_url || '';
+    if (currentAvatar) document.getElementById('settings-selected-avatar').value = currentAvatar;
+
+    container.innerHTML = SETTINGS_AVATARS.map(avatar => `
+      <div onclick="settingsSelectAvatar('${avatar}')" class="cursor-pointer border-4 rounded-xl overflow-hidden transition-all ${currentAvatar === avatar ? 'border-primary shadow-neo scale-105' : 'border-transparent hover:border-black/20'}">
+        <img src="assets/avatars/${avatar}" class="w-full aspect-square object-cover bg-white" alt="Avatar">
+      </div>
+    `).join('');
+  }
+}
+
+function closeSettings() {
+  const modal = document.getElementById('settings-overlay');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  document.getElementById('settings-error').classList.add('hidden');
+  if (typeof initTutorial === 'function') initTutorial();
+}
+
+function settingsSelectAvatar(avatar) {
+  document.getElementById('settings-selected-avatar').value = avatar;
+  const container = document.getElementById('settings-avatars');
+  const items = container.querySelectorAll('div');
+  items.forEach((item, index) => {
+    if (SETTINGS_AVATARS[index] === avatar) {
+      item.className = 'cursor-pointer border-4 rounded-xl overflow-hidden transition-all border-primary shadow-neo scale-105';
+    } else {
+      item.className = 'cursor-pointer border-4 rounded-xl overflow-hidden transition-all border-transparent hover:border-black/20';
+    }
+  });
+}
+
+async function saveSettings() {
+  if (!sb || !user) return;
+  const username = document.getElementById('settings-username').value.trim();
+  const avatar_url = document.getElementById('settings-selected-avatar').value;
+  const errEl = document.getElementById('settings-error');
+  const btn = document.getElementById('settings-save-btn');
+
+  errEl.classList.add('hidden');
+
+  if (!username) {
+    errEl.textContent = 'USERNAME IS REQUIRED.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  btn.innerText = 'SAVING...';
+  btn.disabled = true;
+
+  const { data, error } = await sb.from('profiles').update({
+    username: username,
+    avatar_url: avatar_url || null,
+    display_name: username
+  }).eq('id', user.id);
+
+  btn.innerText = 'SAVE SETTINGS';
+  btn.disabled = false;
+
+  if (error) {
+    if (error.code === '23505' || error.message.includes('unique constraint')) {
+      errEl.textContent = 'USERNAME ALREADY TAKEN.';
+    } else {
+      errEl.textContent = 'ERROR SAVING: ' + error.message;
+    }
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  showToast('Settings Saved successfully! ✓', 'success');
+  await loadUserProfile();
+  await refreshProfiles();
+
+  // Re-render UI
+  if (document.getElementById('view-collab').classList.contains('flex')) {
+    renderFriendsList();
+    renderIncomingRequests();
+  }
+
+  closeSettings();
 }
 
 async function initCollab() {
@@ -1659,7 +1770,8 @@ async function renderFriendsList() {
   }
 
   container.innerHTML = friends.map(f => {
-    const name = f.email.split('@')[0];
+    const profile = globalProfiles[f.id] || {};
+    const name = profile.username || profile.display_name || f.email.split('@')[0];
     return `
       <div class="p-3 border-3 border-black rounded-xl bg-white shadow-neo-sm flex items-center gap-3">
         ${getAvatarHtml(f.id || f.email, 'w-10 h-10', 'text-lg')}
@@ -1709,7 +1821,7 @@ async function searchUsers() {
     }
 
     results.innerHTML = users.map(p => {
-      const name = p.display_name || p.email.split('@')[0];
+      const name = p.username || p.display_name || p.email.split('@')[0];
       const alreadySent = outgoingRequests[p.email] || outgoingRequests[p.id];
       return `
         <div class="flex items-center gap-3 p-2 border-2 border-black rounded-xl bg-white hover:bg-gray-50 transition-colors">
