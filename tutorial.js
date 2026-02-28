@@ -4,7 +4,7 @@ const tutorialSteps = [
     {
         target: null, // Center screen
         title: "WELCOME TO THE GOTED!",
-        text: "I'm your Vault Assistant! Ready for a quick tour of your new Neo-Brutalist second brain?",
+        text: "Hey, myself Bupi! Ready for a quick tour of your new Neo-Brutalist second brain?",
         position: "center"
     },
     {
@@ -26,6 +26,18 @@ const tutorialSteps = [
         position: "right"
     },
     {
+        target: "button[onclick*=\"'flashcards'\"]",
+        title: "FLASHCARDS",
+        text: "Turn your vault entries into flashcards to study and memorize important concepts.",
+        position: "right"
+    },
+    {
+        target: "button[onclick*=\"'trash'\"]",
+        title: "TRASH & ARCHIVE",
+        text: "Keep your vault clean. Items here can be restored or permanently incinerated.",
+        position: "right"
+    },
+    {
         target: "button[onclick*=\"'collab'\"]",
         title: "COLLAB",
         text: "Connect with friends! View their active maps, approve peeks, and share knowledge.",
@@ -34,7 +46,13 @@ const tutorialSteps = [
     {
         target: "button[onclick=\"openAdd()\"]",
         title: "QUICK ADD",
-        text: "Use the ADD button from anywhere to instantly drop a new thought into the vault.",
+        text: "Use the global ADD button to instantly drop a note, link, or idea into the vault without losing focus.",
+        position: "bottom-left"
+    },
+    {
+        target: "button[onclick=\"doLogout()\"]",
+        title: "EXIT",
+        text: "When you're done, safely log out of your session here.",
         position: "bottom-left"
     }
 ];
@@ -90,13 +108,24 @@ function buildTutorialUI() {
     mascot.className = 'flex-shrink-0 animate-bounce cursor-pointer';
     mascot.onclick = () => showMascotAnimation();
     mascot.innerHTML = `
-    <div id="mascot-body" class="w-16 h-16 md:w-20 md:h-20 bg-primary border-4 border-black shadow-neo rounded-2xl flex flex-col items-center justify-center relative overflow-hidden transition-all duration-300">
-      <div class="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-8 border-4 border-black rounded-full shadow-neo bg-white"></div>
-      <div class="flex gap-2">
-        <div class="w-2.5 h-3 md:w-3 md:h-4 bg-black rounded-full animate-pulse"></div>
-        <div class="w-2.5 h-3 md:w-3 md:h-4 bg-black rounded-full animate-pulse"></div>
+    <div id="mascot-body" class="w-16 h-16 md:w-20 md:h-20 bg-primary border-4 border-black shadow-neo rounded-xl flex flex-col items-center justify-center relative transition-all duration-300 transform mt-4">
+      <!-- Antenna -->
+      <div class="absolute -top-4 w-2 h-4 bg-black"></div>
+      <div class="absolute -top-6 w-4 h-4 rounded-full bg-neo-pink border-2 border-black animate-pulse shadow-neo-sm"></div>
+      
+      <!-- Visor -->
+      <div class="w-12 h-6 md:w-14 md:h-8 bg-black rounded-lg border-2 border-neo-blue shadow-[inset_0_0_10px_#23F0C7] flex items-center justify-center gap-2 overflow-hidden relative">
+         <!-- Eyes -->
+         <div class="w-2 h-2 md:w-3 md:h-3 bg-accent rounded-sm animate-pulse shadow-[0_0_5px_#23F0C7]"></div>
+         <div class="w-2 h-2 md:w-3 md:h-3 bg-accent rounded-sm animate-pulse shadow-[0_0_5px_#23F0C7]"></div>
       </div>
-      <div class="mt-2 w-4 md:w-6 h-1.5 md:h-2 bg-black rounded-full"></div>
+      
+      <!-- Mouth details -->
+      <div class="mt-2 flex gap-1">
+        <div class="w-1.5 h-1.5 bg-black rounded-sm border-b border-white/30"></div>
+        <div class="w-3 h-1.5 bg-black rounded-sm border-b border-white/30"></div>
+        <div class="w-1.5 h-1.5 bg-black rounded-sm border-b border-white/30"></div>
+      </div>
     </div>
   `;
 
