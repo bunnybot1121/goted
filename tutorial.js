@@ -207,52 +207,102 @@ function showStep(index) {
 }
 
 function positionDialog(dialog, rect, position) {
-    // Reset classes for layout direction
-    dialog.className = 'absolute flex items-start gap-4 z-[102] transition-all duration-500 ease-out pointer-events-auto max-w-[90vw] md:max-w-md';
+    // Reset styles - horizontal layout: mascot left, bubble right
+    dialog.className = 'absolute flex items-start gap-3 z-[102] transition-all duration-500 ease-out pointer-events-auto';
+    dialog.style.transform = '';
+    dialog.style.flexDirection = '';
     const arrow = document.getElementById('bubble-arrow');
     arrow.className = 'absolute w-4 h-4 bg-white border-l-4 border-t-4 border-black hidden md:block transition-all';
 
     const scrollY = window.scrollY || document.documentElement.scrollTop;
-    const padding = 20;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
 
     if (position === 'center') {
         centerDialog(dialog);
         return;
     }
 
+    // Calculate the main content area start (past the sidebar)
+    const sidebar = document.querySelector('aside') || document.querySelector('nav');
+    const contentStart = sidebar ? sidebar.getBoundingClientRect().right + 30 : 260;
+
+    // Dialog dimensions (approx)
+    const dialogW = Math.min(420, vw * 0.4);
+    const dialogH = 250;
+
     if (position === 'right') {
-        dialog.style.top = (rect.top + scrollY) + 'px';
-        dialog.style.left = (rect.right + padding) + 'px';
+        // Place dialog in the main content area, vertically aligned with target
+        let leftPos = Math.max(contentStart, rect.right + 30);
+        let topPos = rect.top + scrollY - 20;
+
+        // Make sure dialog doesn't go off-screen right
+        if (leftPos + dialogW > vw - 20) {
+            leftPos = vw - dialogW - 20;
+        }
+
+        // Make sure it doesn't go off-screen bottom
+        if (topPos + dialogH > vh + scrollY - 20) {
+            topPos = vh + scrollY - dialogH - 20;
+        }
+
+        // Make sure it doesn't go off-screen top
+        if (topPos < scrollY + 10) {
+            topPos = scrollY + 10;
+        }
+
+        dialog.style.top = topPos + 'px';
+        dialog.style.left = leftPos + 'px';
+        dialog.style.maxWidth = dialogW + 'px';
+
+        // Arrow points left toward the target
         arrow.style.left = '-10px';
         arrow.style.top = '30px';
         arrow.style.transform = 'rotate(-45deg)';
         arrow.style.borderWidth = '4px 0 0 4px';
-    } else if (position === 'bottom-left') {
-        dialog.style.flexDirection = 'row-reverse';
-        dialog.style.top = (rect.bottom + padding) + 'px';
-        dialog.style.left = (rect.left - 300) + 'px'; // approx width
 
-        arrow.style.right = '40px';
+    } else if (position === 'bottom-left') {
+        // Place below the target, shifted to center of content area
+        let leftPos = Math.max(contentStart, rect.left);
+        let topPos = rect.bottom + 20 + scrollY;
+
+        if (leftPos + dialogW > vw - 20) {
+            leftPos = vw - dialogW - 20;
+        }
+
+        dialog.style.top = topPos + 'px';
+        dialog.style.left = leftPos + 'px';
+        dialog.style.maxWidth = dialogW + 'px';
+
+        arrow.style.left = '40px';
         arrow.style.top = '-10px';
         arrow.style.transform = 'rotate(45deg)';
         arrow.style.borderWidth = '4px 0 0 4px';
-        arrow.style.left = 'auto';
+
     } else if (position === 'top') {
-        dialog.style.top = (rect.top + scrollY - 200) + 'px'; // approx height
-        dialog.style.left = rect.left + 'px';
+        let leftPos = Math.max(contentStart, rect.left);
+        let topPos = rect.top + scrollY - dialogH - 20;
+
+        if (topPos < scrollY + 10) topPos = scrollY + 10;
+
+        dialog.style.top = topPos + 'px';
+        dialog.style.left = leftPos + 'px';
+        dialog.style.maxWidth = dialogW + 'px';
+
         arrow.style.left = '40px';
         arrow.style.bottom = '-10px';
         arrow.style.top = 'auto';
         arrow.style.transform = 'rotate(-135deg)';
         arrow.style.borderWidth = '4px 0 0 4px';
     } else {
-        centerDialog(dialog); // fallback
+        centerDialog(dialog);
     }
 
-    // Mobile constraint (force centerish if screen is too small)
-    if (window.innerWidth < 768) {
+    // Mobile: always center below target
+    if (vw < 768) {
         dialog.style.left = '5vw';
-        dialog.style.top = (rect.bottom + padding + scrollY) + 'px';
+        dialog.style.maxWidth = '90vw';
+        dialog.style.top = (rect.bottom + 20 + scrollY) + 'px';
         arrow.style.display = 'none';
     } else {
         arrow.style.display = 'block';
