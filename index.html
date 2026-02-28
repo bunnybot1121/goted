@@ -354,6 +354,15 @@
         </div>
 
         <div class="flex items-center gap-2 md:gap-4">
+          <!-- Profile Badge -->
+          <div id="header-profile-badge"
+            class="flex items-center gap-2 bg-white dark:bg-gray-800 border-3 border-black dark:border-white rounded-xl px-2 py-1 shadow-neo mr-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none"
+            onclick="openSettings()">
+            <img id="header-avatar" src="assets/avatars/robot.png" alt="Avatar"
+              class="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-black object-cover bg-neo-yellow">
+            <span id="header-username"
+              class="font-mono text-xs md:text-sm font-bold text-black dark:text-white pr-2 uppercase">anon</span>
+          </div>
           <button onclick="openAdd()"
             class="flex items-center gap-1 md:gap-2 bg-primary px-3 md:px-6 py-2 rounded-xl border-3 border-black dark:border-white shadow-neo dark:shadow-neo-dark hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all font-bold text-black">
             <span class="material-icons-outlined text-lg md:text-base">add</span>
@@ -786,6 +795,49 @@
         <button onclick="confirmDelete()"
           class="flex-1 bg-black text-white border-3 border-white rounded-xl py-3 font-bold hover:bg-gray-800 transition-colors shadow-[4px_4px_0px_0px_white] active:shadow-none active:translate-y-[2px] active:translate-x-[2px]">
           DELETE
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settings-overlay"
+    class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+    <div
+      class="bg-white dark:bg-gray-800 border-4 border-black dark:border-white rounded-2xl p-6 shadow-neo-lg dark:shadow-neo-dark w-full max-w-lg relative transition-transform animate-in fade-in zoom-in duration-200">
+      <div class="absolute -top-4 -right-4">
+        <button onclick="closeSettings()"
+          class="w-10 h-10 bg-neo-pink border-3 border-black rounded-full flex items-center justify-center font-bold text-black shadow-neo hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none transition-all">✕</button>
+      </div>
+      <h3 class="text-2xl font-bold mb-4 flex items-center gap-2 text-black dark:text-white">
+        <span class="material-icons-outlined text-3xl">settings</span> Profile Settings
+      </h3>
+
+      <div class="space-y-4">
+        <div>
+          <label
+            class="block font-mono text-xs font-bold text-black dark:text-gray-200 mb-2 uppercase tracking-wide">Unique
+            Username</label>
+          <input id="settings-username" type="text" placeholder="neo_hacker_99"
+            class="w-full border-3 border-black dark:border-white rounded-xl p-3 font-bold bg-white dark:bg-gray-900 text-black dark:text-white focus:ring-0 focus:shadow-neo">
+        </div>
+
+        <div>
+          <label
+            class="block font-mono text-xs font-bold text-black dark:text-gray-200 mb-2 uppercase tracking-wide">Choose
+            Avatar</label>
+          <div id="settings-avatars"
+            class="grid grid-cols-4 sm:grid-cols-5 gap-3 max-h-48 overflow-y-auto p-2 border-3 border-black dark:border-white rounded-xl bg-gray-50 dark:bg-gray-900">
+            <!-- Avatars injected via JS -->
+          </div>
+          <input type="hidden" id="settings-selected-avatar" value="">
+        </div>
+
+        <div id="settings-error" class="hidden text-red-500 font-bold text-sm mt-2 font-mono"></div>
+
+        <button onclick="saveSettings()" id="settings-save-btn"
+          class="w-full bg-primary text-black border-3 border-black rounded-xl py-3 font-bold hover:bg-primary-dark transition-colors shadow-neo active:shadow-none active:translate-y-[2px] active:translate-x-[2px] mt-4 uppercase tracking-widest text-lg">
+          Save Settings
         </button>
       </div>
     </div>
