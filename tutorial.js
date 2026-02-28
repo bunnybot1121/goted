@@ -8,6 +8,12 @@ const tutorialSteps = [
         position: "center"
     },
     {
+        target: "button[onclick*=\"'dashboard'\"]",
+        title: "DASHBOARD",
+        text: "Your central hub! See recent activity, filter by category, and access your quick mind maps.",
+        position: "right"
+    },
+    {
         target: "button[onclick*=\"'braindump'\"]",
         title: "BRAIN DUMP",
         text: "Quickly capture ideas without overthinking. Type away and Crystallize them into your vault.",
