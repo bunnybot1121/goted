@@ -1241,7 +1241,7 @@ function getAvatarHtml(key, sizeClass = 'w-10 h-10', textClass = 'text-lg') {
 
 // ─── SETTINGS MODAL ────────────────────────────
 const SETTINGS_AVATARS = [
-  'artist.png', 'hacker.png', 'ninja.png', 'robot.png',
+  'artist.png', 'hacker.png', 'ninja.png', 'robot.png', 'gotared_1.png',
   'avatar_1.jpg', 'avatar_2.jpg', 'avatar_3.jpg', 'avatar_4.jpg',
   'avatar_5.jpg', 'avatar_6.jpg', 'avatar_7.jpg', 'avatar_8.jpg',
   'avatar_9.jpg', 'avatar_10.jpg', 'avatar_11.jpg', 'avatar_12.jpg',

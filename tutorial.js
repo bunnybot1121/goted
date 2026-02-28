@@ -4,62 +4,72 @@ const tutorialSteps = [
     {
         target: null, // Center screen
         title: "WELCOME TO THE GOTED!",
-        text: "Hey, myself Bupi! Ready for a quick tour of your new Neo-Brutalist second brain?",
-        position: "center"
+        text: "Hey, myself GoTared! Ready for a quick tour of your new Neo-Brutalist second brain?",
+        position: "center",
+        emotion: "gotared_1.png"
     },
     {
         target: "button[onclick*=\"'dashboard'\"]",
         title: "DASHBOARD",
         text: "Your central hub! See recent activity, filter by category, and access your quick mind maps.",
-        position: "right"
+        position: "right",
+        emotion: "gotared_8.png"
     },
     {
         target: "button[onclick*=\"'braindump'\"]",
         title: "BRAIN DUMP",
         text: "Quickly capture ideas without overthinking. Type away and Crystallize them into your vault.",
-        position: "right"
+        position: "right",
+        emotion: "gotared_3.png"
     },
     {
         target: "button[onclick*=\"'gallery'\"]",
         title: "VAULT GALLERY",
         text: "View all your captured notes, links, and ideas. Filter and search easily!",
-        position: "right"
+        position: "right",
+        emotion: "gotared_7.png"
     },
     {
         target: "button[onclick*=\"'mindmap'\"]",
         title: "MIND MAPS",
         text: "Connect your ideas spatially. Drag nodes, link them together, and see the big picture.",
-        position: "right"
+        position: "right",
+        emotion: "gotared_14.png"
     },
     {
         target: "button[onclick*=\"'flashcards'\"]",
         title: "FLASHCARDS",
         text: "Turn your vault entries into flashcards to study and memorize important concepts.",
-        position: "right"
+        position: "right",
+        emotion: "gotared_11.png"
     },
     {
         target: "button[onclick*=\"'trash'\"]",
         title: "TRASH & ARCHIVE",
         text: "Keep your vault clean. Items here can be restored or permanently incinerated.",
-        position: "right"
+        position: "right",
+        emotion: "gotared_6.png"
     },
     {
         target: "button[onclick*=\"'collab'\"]",
         title: "COLLAB",
         text: "Connect with friends! View their active maps, approve peeks, and share knowledge.",
-        position: "right"
+        position: "right",
+        emotion: "gotared_10.png"
     },
     {
         target: "button[onclick=\"openAdd()\"]",
         title: "QUICK ADD",
         text: "Use the global ADD button to instantly drop a note, link, or idea into the vault without losing focus.",
-        position: "bottom-left"
+        position: "bottom-left",
+        emotion: "gotared_5.png"
     },
     {
         target: "button[onclick=\"doLogout()\"]",
         title: "EXIT",
         text: "When you're done, safely log out of your session here.",
-        position: "bottom-left"
+        position: "bottom-left",
+        emotion: "gotared_12.png"
     }
 ];
 
@@ -113,27 +123,7 @@ function buildTutorialUI() {
     const mascot = document.createElement('div');
     mascot.className = 'flex-shrink-0 animate-bounce cursor-pointer';
     mascot.onclick = () => showMascotAnimation();
-    mascot.innerHTML = `
-    <div id="mascot-body" class="w-16 h-16 md:w-20 md:h-20 bg-primary border-4 border-black shadow-neo rounded-xl flex flex-col items-center justify-center relative transition-all duration-300 transform mt-4">
-      <!-- Antenna -->
-      <div class="absolute -top-4 w-2 h-4 bg-black"></div>
-      <div class="absolute -top-6 w-4 h-4 rounded-full bg-neo-pink border-2 border-black animate-pulse shadow-neo-sm"></div>
-      
-      <!-- Visor -->
-      <div class="w-12 h-6 md:w-14 md:h-8 bg-black rounded-lg border-2 border-neo-blue shadow-[inset_0_0_10px_#23F0C7] flex items-center justify-center gap-2 overflow-hidden relative">
-         <!-- Eyes -->
-         <div class="w-2 h-2 md:w-3 md:h-3 bg-accent rounded-sm animate-pulse shadow-[0_0_5px_#23F0C7]"></div>
-         <div class="w-2 h-2 md:w-3 md:h-3 bg-accent rounded-sm animate-pulse shadow-[0_0_5px_#23F0C7]"></div>
-      </div>
-      
-      <!-- Mouth details -->
-      <div class="mt-2 flex gap-1">
-        <div class="w-1.5 h-1.5 bg-black rounded-sm border-b border-white/30"></div>
-        <div class="w-3 h-1.5 bg-black rounded-sm border-b border-white/30"></div>
-        <div class="w-1.5 h-1.5 bg-black rounded-sm border-b border-white/30"></div>
-      </div>
-    </div>
-  `;
+    mascot.innerHTML = `<img id="mascot-img" src="assets/avatars/gotared_1.png" class="w-24 md:w-32 object-contain filter drop-shadow-[4px_4px_0_rgba(0,0,0,1)] transition-all duration-300" alt="GoTared Mascot">`;
 
     // Speech Bubble
     const bubble = document.createElement('div');
@@ -178,6 +168,11 @@ function showStep(index) {
     textEl.innerText = step.text;
     progEl.innerText = `${index + 1}/${tutorialSteps.length}`;
     nextBtn.innerText = (index === tutorialSteps.length - 1) ? "LET'S GO!" : "NEXT ➔";
+
+    const mascotImg = document.getElementById('mascot-img');
+    if (mascotImg && step.emotion) {
+        mascotImg.src = `assets/avatars/${step.emotion}`;
+    }
 
     if (step.target) {
         const targetEl = document.querySelector(step.target);
@@ -273,13 +268,12 @@ function centerDialog(dialog) {
 }
 
 function showMascotAnimation() {
-    const body = document.getElementById('mascot-body');
-    body.classList.replace('bg-primary', 'bg-neo-pink');
-    body.style.transform = 'scale(1.1) rotate(10deg)';
+    const img = document.getElementById('mascot-img');
+    if (!img) return;
+    img.style.transform = 'scale(1.1) rotate(5deg)';
     setTimeout(() => {
-        body.classList.replace('bg-neo-pink', 'bg-primary');
-        body.style.transform = 'scale(1) rotate(0deg)';
-    }, 400);
+        img.style.transform = 'scale(1) rotate(0deg)';
+    }, 300);
 }
 
 window.nextTutorialStep = function () {
