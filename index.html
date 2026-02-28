@@ -700,16 +700,45 @@
           onclick="if(event.target===this)closeDayPopup()">
           <div class="absolute inset-0 bg-black/40"></div>
           <div
-            class="relative bg-white dark:bg-gray-900 border-4 border-black rounded-2xl shadow-neo-lg w-full max-w-md max-h-[70vh] flex flex-col overflow-hidden">
+            class="relative bg-white dark:bg-gray-900 border-4 border-black rounded-2xl shadow-neo-lg w-full max-w-md max-h-[80vh] flex flex-col overflow-hidden">
             <!-- Header -->
             <div class="bg-primary border-b-4 border-black px-5 py-3 flex items-center justify-between flex-shrink-0">
               <h3 id="cal-popup-title" class="font-bold text-black uppercase tracking-wider text-sm">FEB 28, 2026</h3>
               <button onclick="closeDayPopup()"
                 class="text-black font-bold text-xl leading-none hover:scale-110 transition-transform">✕</button>
             </div>
-            <!-- Items List -->
-            <div id="cal-popup-items" class="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-              <!-- injected by showDayLog -->
+
+            <div class="flex-1 overflow-y-auto">
+              <!-- Checklist Section -->
+              <div class="p-4 border-b-3 border-dashed border-gray-300 dark:border-gray-700">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="text-sm">☑</span>
+                  <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Daily Tasks</span>
+                </div>
+                <!-- Quick Add -->
+                <div class="flex gap-2 mb-3">
+                  <input id="cal-task-input" type="text" placeholder="Add a task..."
+                    onkeydown="if(event.key==='Enter')addDailyTask()"
+                    class="flex-1 px-3 py-2 border-2 border-black rounded-lg font-mono text-xs bg-white dark:bg-gray-800 text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-neo-pink placeholder-gray-400" />
+                  <button onclick="addDailyTask()"
+                    class="bg-neo-pink text-black border-2 border-black px-3 py-2 rounded-lg font-bold text-xs shadow-neo-sm hover:shadow-none hover:translate-y-[1px] transition-all">+</button>
+                </div>
+                <!-- Task List -->
+                <div id="cal-task-list" class="flex flex-col gap-1.5">
+                  <!-- injected by loadDailyTasks -->
+                </div>
+              </div>
+
+              <!-- Vault Entries Section -->
+              <div class="p-4">
+                <div class="flex items-center gap-2 mb-3">
+                  <span class="text-sm">📝</span>
+                  <span class="text-xs font-bold uppercase tracking-wider text-gray-500">Vault Entries</span>
+                </div>
+                <div id="cal-popup-items" class="flex flex-col gap-3">
+                  <!-- injected by showDayLog -->
+                </div>
+              </div>
             </div>
           </div>
         </div>

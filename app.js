@@ -642,7 +642,10 @@ function nextMonth() {
   renderCalendar();
 }
 
+let currentPopupDay = null;
+
 function showDayLog(day) {
+  currentPopupDay = day;
   const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
   const relevant = items.filter(i => {
     const d = new Date(i.created_at);
@@ -652,7 +655,7 @@ function showDayLog(day) {
   // Set title
   document.getElementById('cal-popup-title').innerText = `${months[calMonth]} ${day}, ${calYear}`;
 
-  // Build items list
+  // Build vault items list
   const container = document.getElementById('cal-popup-items');
   const typeColors = { note: 'bg-green-200 text-green-800', code: 'bg-orange-200 text-orange-800', idea: 'bg-pink-200 text-pink-800', link: 'bg-blue-200 text-blue-800' };
 
@@ -674,21 +677,96 @@ function showDayLog(day) {
       `;
     }).join('');
   } else {
-    container.innerHTML = `
-      <div class="flex flex-col items-center justify-center py-8 text-center">
-        <span class="text-4xl mb-3">📭</span>
-        <div class="text-sm font-bold text-gray-400 uppercase">No entries this day</div>
-        <div class="text-xs font-mono text-gray-400 mt-1">Brain dump something to fill it!</div>
-      </div>
-    `;
+    container.innerHTML = `<div class="text-xs font-mono text-gray-400 text-center py-2">No vault entries this day</div>`;
   }
 
-  // Show popup
+  // Load daily tasks
+  loadDailyTasks(day);
+
+  // Show popup & focus input
   document.getElementById('cal-day-popup').classList.remove('hidden');
+  setTimeout(() => {
+    const input = document.getElementById('cal-task-input');
+    if (input) input.focus();
+  }, 100);
 }
 
 function closeDayPopup() {
   document.getElementById('cal-day-popup').classList.add('hidden');
+  currentPopupDay = null;
+}
+
+// ─── DAILY TASKS (Calendar Checklist) ────────────
+function getDateString(day) {
+  const m = String(calMonth + 1).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  return `${calYear}-${m}-${d}`;
+}
+
+async function loadDailyTasks(day) {
+  const container = document.getElementById('cal-task-list');
+  if (!container) return;
+
+  const dateStr = getDateString(day);
+  const { data, error } = await sb.from('daily_tasks')
+    .select('*')
+    .eq('task_date', dateStr)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) {
+    container.innerHTML = '';
+    return;
+  }
+
+  if (data.length === 0) {
+    container.innerHTML = `<div class="text-[10px] font-mono text-gray-400 text-center py-1">No tasks yet — add one above!</div>`;
+    return;
+  }
+
+  container.innerHTML = data.map(t => `
+    <div class="flex items-center gap-2 group" id="task-${t.id}">
+      <label class="flex items-center gap-2 flex-1 cursor-pointer select-none px-2 py-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+        <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleDailyTask('${t.id}', this.checked)"
+          class="w-4 h-4 accent-neo-pink border-2 border-black rounded flex-shrink-0 cursor-pointer" />
+        <span class="font-mono text-xs ${t.done ? 'line-through text-gray-400' : 'text-black dark:text-white font-bold'} transition-all">${esc(t.text)}</span>
+      </label>
+      <button onclick="deleteDailyTask('${t.id}')"
+        class="text-gray-300 hover:text-red-500 text-xs font-bold opacity-0 group-hover:opacity-100 transition-all px-1">✕</button>
+    </div>
+  `).join('');
+}
+
+async function addDailyTask() {
+  const input = document.getElementById('cal-task-input');
+  const text = (input.value || '').trim();
+  if (!text || !currentPopupDay) return;
+
+  const dateStr = getDateString(currentPopupDay);
+  const { error } = await sb.from('daily_tasks').insert({
+    user_id: user.id,
+    task_date: dateStr,
+    text: text,
+    done: false
+  });
+
+  if (error) {
+    showToast('Failed to add task', 'error');
+    return;
+  }
+
+  input.value = '';
+  loadDailyTasks(currentPopupDay);
+  showToast('Task added!', 'success');
+}
+
+async function toggleDailyTask(id, done) {
+  await sb.from('daily_tasks').update({ done }).eq('id', id);
+  if (currentPopupDay) loadDailyTasks(currentPopupDay);
+}
+
+async function deleteDailyTask(id) {
+  await sb.from('daily_tasks').delete().eq('id', id);
+  if (currentPopupDay) loadDailyTasks(currentPopupDay);
 }
 
 function openClipper() {
