@@ -372,38 +372,129 @@ function surpriseMe() {
 }
 
 let studySession = [], currentCardIndex = 0;
+let fcScore = 0, fcSkipped = 0;
+let fcSelectedCategory = 'all';
+let fcSessionSize = 10;
 
 function initFlashcards() {
-  document.getElementById('flashcard').classList.add('hidden');
-  document.getElementById('flashcard-empty').classList.remove('hidden');
-  document.getElementById('study-actions').classList.add('invisible');
-  document.getElementById('study-progress').innerText = '0 / 0';
-  document.getElementById('fc-progress-bar').style.width = '0%';
+  // Show config, hide session
+  document.getElementById('fc-config').classList.remove('hidden');
+  document.getElementById('fc-session').classList.add('hidden');
+  updateFcAvailableCount();
+}
+
+function updateFcAvailableCount() {
+  const available = getFilteredFcItems();
+  const el = document.getElementById('fc-available-count');
+  if (el) el.innerText = `${available.length} card${available.length !== 1 ? 's' : ''} available`;
+}
+
+function getFilteredFcItems() {
+  return items.filter(i => {
+    if ((i.status || 'active') !== 'active') return false;
+    if (fcSelectedCategory !== 'all') {
+      return (i.category || '').toLowerCase() === fcSelectedCategory;
+    }
+    return true;
+  });
+}
+
+function toggleFcFilter(btn, category) {
+  fcSelectedCategory = category;
+  // Update button styles
+  document.querySelectorAll('.fc-filter-btn').forEach(b => {
+    b.classList.remove('bg-primary', 'text-black');
+    b.classList.add('bg-white', 'dark:bg-gray-700', 'text-black', 'dark:text-white');
+  });
+  btn.classList.remove('bg-white', 'dark:bg-gray-700', 'dark:text-white');
+  btn.classList.add('bg-primary', 'text-black');
+  updateFcAvailableCount();
+}
+
+function setFcSize(btn, size) {
+  fcSessionSize = size;
+  document.querySelectorAll('.fc-size-btn').forEach(b => {
+    b.classList.remove('bg-primary');
+    b.classList.add('bg-white', 'dark:bg-gray-700');
+  });
+  btn.classList.remove('bg-white', 'dark:bg-gray-700');
+  btn.classList.add('bg-primary');
 }
 
 function startStudySession() {
-  studySession = items.filter(i => (i.status || STATUS.ACTIVE) === STATUS.ACTIVE).sort(() => Math.random() - 0.5).slice(0, 10);
-  if (!studySession.length) return alert("VAULT IS EMPTY.");
+  let pool = getFilteredFcItems();
+  if (!pool.length) {
+    showToast('No cards available for this filter!', 'error');
+    return;
+  }
 
+  // Shuffle if enabled
+  const shuffle = document.getElementById('fc-shuffle');
+  if (shuffle && shuffle.checked) {
+    pool = pool.sort(() => Math.random() - 0.5);
+  }
+
+  // Limit to session size
+  studySession = pool.slice(0, fcSessionSize);
   currentCardIndex = 0;
-  document.getElementById('flashcard-empty').classList.add('hidden');
-  document.getElementById('flashcard').classList.remove('hidden');
-  document.getElementById('study-actions').classList.remove('invisible');
-  const fc = document.getElementById('flashcard');
+  fcScore = 0;
+  fcSkipped = 0;
+
+  // Switch to session view
+  document.getElementById('fc-config').classList.add('hidden');
+  document.getElementById('fc-session').classList.remove('hidden');
+  document.getElementById('fc-session').classList.add('flex');
 
   showCard();
+  updateScoreDisplay();
+
+  // Add keyboard listener
+  document.addEventListener('keydown', fcKeyHandler);
+}
+
+function fcKeyHandler(e) {
+  // Only handle if flashcards view is visible
+  const session = document.getElementById('fc-session');
+  if (!session || session.classList.contains('hidden')) return;
+
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevFlashcard(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); nextFlashcard(false); }
+  else if (e.key === ' ') {
+    e.preventDefault();
+    const fc = document.getElementById('flashcard');
+    if (fc) fc.children[0].classList.toggle('rotate-y-180');
+  }
+  else if (e.key === 'g' || e.key === 'G') { nextFlashcard(true); }
+  else if (e.key === 's' || e.key === 'S') { nextFlashcard(false); }
 }
 
 function showCard() {
   const card = studySession[currentCardIndex];
   const fc = document.getElementById('flashcard');
+  // Reset flip
   fc.children[0].classList.remove('rotate-y-180');
 
   document.getElementById('fc-front-text').innerText = card.title || 'UNTITLED';
-  document.getElementById('fc-back-text').innerText = card.content || '';
+  document.getElementById('fc-back-text').innerText = card.content || '(no content)';
   document.getElementById('study-progress').innerText = `${currentCardIndex + 1} / ${studySession.length}`;
+
+  // Type badge
+  const badge = document.getElementById('fc-type-badge');
+  if (badge) {
+    const type = (card.type || 'note').toUpperCase();
+    badge.innerText = type;
+    const colors = { NOTE: 'bg-green-200', CODE: 'bg-orange-200', IDEA: 'bg-pink-200', LINK: 'bg-blue-200' };
+    badge.className = `absolute top-4 left-4 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border border-black/20 ${colors[type] || 'bg-gray-200'} text-gray-700`;
+  }
+
+  // Progress bar
   const pct = ((currentCardIndex + 1) / studySession.length * 100).toFixed(0);
   document.getElementById('fc-progress-bar').style.width = pct + '%';
+}
+
+function updateScoreDisplay() {
+  const el = document.getElementById('fc-score-display');
+  if (el) el.innerText = `✓ ${fcScore}   ✗ ${fcSkipped}`;
 }
 
 function prevFlashcard() {
@@ -414,13 +505,45 @@ function prevFlashcard() {
 }
 
 function nextFlashcard(success) {
+  if (success) fcScore++;
+  else fcSkipped++;
+  updateScoreDisplay();
+
   currentCardIndex++;
   if (currentCardIndex >= studySession.length) {
-    alert("SESSION COMPLETE. BRAIN REFRESHED.");
-    initFlashcards();
+    endStudySession();
   } else {
     showCard();
   }
+}
+
+function endStudySession() {
+  // Remove keyboard listener
+  document.removeEventListener('keydown', fcKeyHandler);
+
+  const total = studySession.length;
+  const pct = total > 0 ? Math.round((fcScore / total) * 100) : 0;
+
+  // Pick emoji based on score
+  let emoji = '🎉';
+  if (pct < 30) emoji = '😅';
+  else if (pct < 60) emoji = '🤔';
+  else if (pct < 80) emoji = '😊';
+  else if (pct < 100) emoji = '🔥';
+
+  document.getElementById('fc-results-emoji').innerText = emoji;
+  document.getElementById('fc-results-score').innerText = pct + '%';
+  document.getElementById('fc-results-got').innerText = fcScore;
+  document.getElementById('fc-results-skipped').innerText = fcSkipped;
+  document.getElementById('fc-results-total').innerText = total;
+
+  // Show results overlay
+  document.getElementById('fc-results').classList.remove('hidden');
+}
+
+function closeResults() {
+  document.getElementById('fc-results').classList.add('hidden');
+  initFlashcards();
 }
 
 function renderMindMap() {
