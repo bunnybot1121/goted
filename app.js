@@ -1906,9 +1906,14 @@ let messageChannel = null;
 async function getFriends() {
   const { data } = await sb.from('collab_requests').select('*').eq('status', 'accepted');
   if (!data) return [];
+  const seen = new Set();
   return data.map(r => {
     if (r.requester_id === user.id) return { id: r.target_id, email: r.target_email || r.target_id.slice(0, 8) };
     return { id: r.requester_id, email: r.requester_email };
+  }).filter(f => {
+    if (seen.has(f.id)) return false;
+    seen.add(f.id);
+    return true;
   });
 }
 
