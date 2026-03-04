@@ -1,0 +1,12 @@
+node_modules/
+.vscode/
+*.code-workspace
+package.json
+package-lock.json
+.gemini/
+clean_sprites.py
+processor.py
+scripts/
+sql/
+goted/
+wormhole.html
